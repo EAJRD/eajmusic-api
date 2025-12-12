@@ -1,8 +1,7 @@
-/// <reference types="vite/client" />
 import axios from 'axios';
 
 // En un entorno real, esto vendría de una variable de entorno (.env)
-const API_URL = import.meta.env?.VITE_API_URL || 'https://api.eajmusic.com/v1';
+const API_URL = (import.meta as any).env?.VITE_API_URL || 'https://api.eajmusic.com/v1';
 
 export const api = axios.create({
   baseURL: API_URL,

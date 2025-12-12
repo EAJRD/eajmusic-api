@@ -8,6 +8,7 @@ import { Analytics } from "./components/Analytics";
 import { Wallet } from "./components/Wallet";
 import { ReleaseWizard } from "./components/ReleaseWizard";
 import { AdminDashboard } from "./components/AdminDashboard";
+import { Login } from "./components/Login";
 
 const App = () => {
     const [view, setView] = useState<ViewState>('login');
@@ -27,17 +28,7 @@ const App = () => {
     };
 
     if (view === 'login') {
-        return (
-            <div className="h-screen flex items-center justify-center bg-dark-950">
-                <div className="text-center space-y-8 animate-in zoom-in duration-300">
-                    <h1 className="text-4xl font-bold text-white tracking-tight">EAJ<span className="text-brand-500">Music</span></h1>
-                    <div className="flex gap-4">
-                        <button onClick={() => handleLogin('artist')} className="px-8 py-3 bg-brand-600 hover:bg-brand-500 text-white rounded-xl font-bold transition-all">Artist Login</button>
-                        <button onClick={() => handleLogin('admin')} className="px-8 py-3 bg-dark-800 border border-dark-700 hover:bg-dark-700 text-slate-300 rounded-xl font-bold transition-all">Admin Portal</button>
-                    </div>
-                </div>
-            </div>
-        );
+        return <Login onLogin={handleLogin} />;
     }
 
     if (view === 'admin_dashboard') {

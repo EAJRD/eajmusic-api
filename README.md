@@ -95,7 +95,7 @@ Sigue estos pasos para levantar el proyecto en tu entorno local:
     ```
 2.  **Entrar al directorio**
     ```bash
-    cd EAJMUSIC-V1
+    cd EAJMUSIC
     ```
 3.  **Ejecutar**
     * Abre el archivo `index.html` en tu navegador.

@@ -28,7 +28,7 @@ Basado en la versión actual (V1), la plataforma incluye:
 
 ### 📊 1. Panel de Control (Dashboard)
 * **Vista General**: Resumen inmediato de reproducciones totales (*Total Streams*) y lanzamientos activos.
-* **Smart Greetings**: Bienvenida personalizada al artista (ej. "Welcome, Jay Z").
+* **Smart Greetings**: Bienvenida personalizada al artista.
 
 ### 💰 2. Billetera y Pagos (Wallet)
 * **Balance en Tiempo Real**: Visualización clara del dinero disponible para retiro.

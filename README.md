@@ -3,7 +3,7 @@
   
   <br />
   
-  # EAJ Music Dashboard (V1)
+  # EAJ Music Dashboard
   
   **Plataforma de Gestión y Distribución Musical para Artistas**
 

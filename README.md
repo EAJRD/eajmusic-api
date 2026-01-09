@@ -55,16 +55,16 @@ Basado en la versión actual (V1), la plataforma incluye:
       <td align="center"><b>Billetera (Wallet)</b></td>
     </tr>
     <tr>
-      <td><img src="ruta/a/tu/screenshot_dashboard.png" width="300" alt="Dashboard View"></td>
-      <td><img src="ruta/a/tu/screenshot_wallet.png" width="300" alt="Wallet View"></td>
+      <td><img src="./img/screenshot_dashboard.png" width="300" alt="Dashboard View"></td>
+      <td><img src="./img/screenshot_wallet.png" width="300" alt="Wallet View"></td>
     </tr>
     <tr>
       <td align="center"><b>Nuevo Lanzamiento</b></td>
       <td align="center"><b>Analíticas</b></td>
     </tr>
     <tr>
-      <td><img src="ruta/a/tu/screenshot_release.png" width="300" alt="New Release Flow"></td>
-      <td><img src="ruta/a/tu/screenshot_data.png" width="300" alt="Analytics View"></td>
+      <td><img src="./img/screenshot_release.png" width="300" alt="New Release Flow"></td>
+      <td><img src="./img/screenshot_data.png" width="300" alt="Analytics View"></td>
     </tr>
   </table>
 </div>

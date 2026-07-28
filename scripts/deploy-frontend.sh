@@ -14,13 +14,13 @@ REPO="EAJRD/eajmusic-frontend"
 TEMP_DIR="/tmp/eajmusic-deploy"
 LOG_FILE="/var/log/eajmusic-deploy.log"
 
-# Hostinger targets
-HOSTINGER_HOST="194.195.84.121"
-HOSTINGER_PORT="65002"
-HOSTINGER_USER="u539343672"
-HOSTINGER_SSH_ARGS="-p $HOSTINGER_PORT -o StrictHostKeyChecking=no"
+# Hostinger targets (override via env vars)
+HOSTINGER_HOST="${HOSTINGER_HOST:-194.195.84.121}"
+HOSTINGER_PORT="${HOSTINGER_PORT:-65002}"
+HOSTINGER_USER="${HOSTINGER_USER:-u539343672}"
+HOSTINGER_SSH_ARGS="-p $HOSTINGER_PORT -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
-BASE="/home/u539343672/domains/eajmusic.com/public_html"
+BASE="${HOSTINGER_BASE:-/home/u539343672/domains/eajmusic.com/public_html}"
 MAIN_DIR="$BASE"
 ARTIST_DIR="${BASE}/artist"
 ADMIN_DIR="${BASE}/eaj"

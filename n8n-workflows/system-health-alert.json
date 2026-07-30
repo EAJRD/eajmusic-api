@@ -1,0 +1,126 @@
+{
+  "name": "EAJMUSIC - System Health Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "minutes", "minutesInterval": 5 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api-api.eajmusic.com/api/health",
+        "options": {
+          "timeout": 8000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "check-api-health",
+      "name": "Check API + DB Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "http-not-ok",
+              "leftValue": "={{$json.statusCode}}",
+              "rightValue": 200,
+              "operator": { "type": "number", "operation": "notEquals" }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "is-unhealthy",
+      "name": "Is Unhealthy?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "message",
+              "type": "string",
+              "value": "=🚨 *EAJMUSIC — API caída o degradada*\n\nStatus HTTP: {{$json.statusCode}}\nRespuesta: {{JSON.stringify($json.body || $json)}}\nHora: {{$now.toISO()}}\n\nRevisa el servidor y la conexión a la base de datos de inmediato."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-alert",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 220]
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{$json.message}}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-send",
+      "name": "Telegram: Send Critical Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1100, 220],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
+          "name": "EAJMUSIC Telegram Alerts"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [[{ "node": "Check API + DB Health", "type": "main", "index": 0 }]]
+    },
+    "Check API + DB Health": {
+      "main": [[{ "node": "Is Unhealthy?", "type": "main", "index": 0 }]]
+    },
+    "Is Unhealthy?": {
+      "main": [
+        [{ "node": "Format Alert", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Format Alert": {
+      "main": [[{ "node": "Telegram: Send Critical Alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "_eajmusicNotes": {
+    "why": "This workflow does NOT depend on the backend calling n8n (it can't, if it's down) — n8n polls GET /api/health itself, which per eajmusic-api's src/index.js reports the Postgres connection status too. This is how 'caídas del sistema, errores de base de datos' from the request gets covered without new backend instrumentation.",
+    "beforeActivating": [
+      "Same Telegram credential setup as the other workflows.",
+      "Consider adding n8n's built-in error workflow (Settings > Workflows > Error Workflow) pointing at a variant of this alert, so failures INSIDE other n8n workflows also page you — that's a separate n8n-level setting, not a JSON file to import.",
+      "5-minute interval is a starting point — tighten it if you want faster detection once this is live, but remember more frequent polling means more requests hitting the health endpoint."
+    ]
+  }
+}

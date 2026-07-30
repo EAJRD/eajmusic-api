@@ -1,0 +1,79 @@
+{
+  "name": "EAJMUSIC - Payout Requested Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payout-requested",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-payout-requested",
+      "name": "Webhook: payout-requested",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "REPLACE_WITH_N8N_GENERATED_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "message",
+              "type": "string",
+              "value": "=💸 *Nueva solicitud de retiro*\n\nUsuario ID: `{{$json.body.userId}}`\nMonto: {{$json.body.amount}} {{$json.body.currency}}\nPayout ID: `{{$json.body.payoutId}}`\nSolicitado: {{$json.body.requestedAt}}\n\nProcésalo en: https://eaj.eajmusic.com/finance"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-message",
+      "name": "Format Telegram Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{$json.message}}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-send",
+      "name": "Telegram: Send Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [700, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
+          "name": "EAJMUSIC Telegram Alerts"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook: payout-requested": {
+      "main": [[{ "node": "Format Telegram Message", "type": "main", "index": 0 }]]
+    },
+    "Format Telegram Message": {
+      "main": [[{ "node": "Telegram: Send Alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "_eajmusicNotes": {
+    "backendEventSource": "eajmusic-api src/routes/artist.js — POST /artist/wallet/request-payout fires this after creating the payout record (fire-and-forget).",
+    "expectedPayload": { "payoutId": "string", "userId": "string", "amount": "number", "currency": "string", "requestedAt": "ISO date string" },
+    "beforeActivating": [
+      "Same Telegram credential setup as testimonial-submitted.json — reuse the same n8n credential, no need to create a second one.",
+      "This one carries money-movement info; consider restricting the target chat to a Finance-only Telegram group rather than a general alerts channel."
+    ]
+  }
+}

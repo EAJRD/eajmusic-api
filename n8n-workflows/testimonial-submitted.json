@@ -1,0 +1,83 @@
+{
+  "name": "EAJMUSIC - Testimonial Submitted Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "testimonial-submitted",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-testimonial-submitted",
+      "name": "Webhook: testimonial-submitted",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "REPLACE_WITH_N8N_GENERATED_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "message",
+              "type": "string",
+              "value": "=🎤 *Nuevo testimonio pendiente de revisión*\n\nArtista/perfil ID: `{{$json.body.artistProfileId}}`\nCita: \"{{$json.body.quote}}\"\nEnviado: {{$json.body.submittedAt}}\n\nRevísalo en el panel de moderación: https://eaj.eajmusic.com/testimonials"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-message",
+      "name": "Format Telegram Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{$json.message}}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-send",
+      "name": "Telegram: Send Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [700, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
+          "name": "EAJMUSIC Telegram Alerts"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook: testimonial-submitted": {
+      "main": [[{ "node": "Format Telegram Message", "type": "main", "index": 0 }]]
+    },
+    "Format Telegram Message": {
+      "main": [[{ "node": "Telegram: Send Alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "_eajmusicNotes": {
+    "backendEventSource": "eajmusic-api src/routes/public.js — POST /public/testimonials/:artistSlug fires this after creating a PENDING testimonial (fire-and-forget, never blocks the submitter's response).",
+    "expectedPayload": { "testimonialId": "string", "artistProfileId": "string", "quote": "string", "submittedAt": "ISO date string" },
+    "envVarNeeded": "N8N_WEBHOOK_BASE_URL on the backend must point here, e.g. https://n8n.eajmusic.com/webhook (production) — the path suffix /testimonial-submitted is appended automatically by the backend.",
+    "beforeActivating": [
+      "1. Create a Telegram credential in n8n (Credentials > New > Telegram API) using a bot token from @BotFather. Do not paste the token anywhere else.",
+      "2. Replace REPLACE_WITH_N8N_CREDENTIAL_ID with that credential's id after importing.",
+      "3. Replace REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID with your personal or group chat id (send /start to your bot, then check https://api.telegram.org/bot<token>/getUpdates to find it).",
+      "4. After import, n8n assigns a real webhookId automatically — no action needed there.",
+      "5. Toggle the workflow Active once verified."
+    ]
+  }
+}

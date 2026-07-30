@@ -5,16 +5,19 @@ import { PrismaClient } from '@prisma/client';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
 import { validate, registerSchema, loginSchema, updateProfileSchema, changePasswordSchema } from '../validators/auth.js';
+import { setAuthCookies, clearAuthCookies, REFRESH_COOKIE } from '../utils/cookies.js';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-// Generate tokens
+// Generate tokens. Access tokens are short-lived by design (they live in a
+// cookie sent on every request); refresh tokens are long-lived and only
+// used against POST /auth/refresh.
 const generateTokens = (userId, rememberMe = false) => {
   const accessToken = jwt.sign(
     { userId },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
   );
 
   const refreshToken = jwt.sign(
@@ -122,6 +125,11 @@ router.post('/register', validate(registerSchema), asyncHandler(async (req, res)
       userAgent: req.headers['user-agent'],
     },
   });
+
+  // Set httpOnly cookies (primary auth path) - the JSON body still carries
+  // the tokens too, for any code still reading them from the response body
+  // during the frontend's transition off localStorage.
+  setAuthCookies(res, { accessToken, refreshToken });
 
   // Return user data (without sensitive info)
   res.status(201).json({
@@ -238,6 +246,8 @@ router.post('/login', validate(loginSchema), asyncHandler(async (req, res) => {
     },
   });
 
+  setAuthCookies(res, { accessToken, refreshToken });
+
   res.json({
     success: true,
     message: 'Login successful',
@@ -259,8 +269,9 @@ router.post('/login', validate(loginSchema), asyncHandler(async (req, res) => {
 // LOGOUT
 // ===========================================
 router.post('/logout', authenticate, asyncHandler(async (req, res) => {
-  // Delete session
-  await prisma.session.delete({
+  // deleteMany instead of delete: never throw if the session already expired
+  // or was cleaned up elsewhere - logout should always succeed and clear cookies.
+  await prisma.session.deleteMany({
     where: { id: req.sessionId },
   });
 
@@ -274,6 +285,8 @@ router.post('/logout', authenticate, asyncHandler(async (req, res) => {
       ipAddress: req.ip,
     },
   });
+
+  clearAuthCookies(res);
 
   res.json({
     success: true,
@@ -422,7 +435,9 @@ router.post('/change-password', authenticate, validate(changePasswordSchema), as
 // REFRESH TOKEN
 // ===========================================
 router.post('/refresh', asyncHandler(async (req, res) => {
-  const { refreshToken } = req.body;
+  // Prefer the httpOnly cookie; fall back to the request body for the
+  // legacy localStorage-based frontend flow during the transition.
+  const refreshToken = req.cookies?.[REFRESH_COOKIE] || req.body.refreshToken;
 
   if (!refreshToken) {
     return res.status(400).json({
@@ -469,6 +484,8 @@ router.post('/refresh', asyncHandler(async (req, res) => {
         lastActivityAt: new Date(),
       },
     });
+
+    setAuthCookies(res, { accessToken, refreshToken: newRefreshToken });
 
     res.json({
       success: true,

@@ -85,6 +85,28 @@ router.post('/ath-movil/initiate', authenticate, asyncHandler(async (req, res) =
 // ATH MÓVIL WEBHOOK / CALLBACK
 // ===========================================
 router.post('/ath-movil/webhook', asyncHandler(async (req, res) => {
+  // TODO: confirm against ATH Móvil's actual webhook signature docs.
+  // ATH Móvil's Business API has no documented request-signing scheme in
+  // this codebase (no signature header, no HMAC secret) - athMovilService's
+  // PUBLIC_TOKEN/PRIVATE_TOKEN are only used for *outbound* calls to ATH
+  // Móvil, not for verifying *inbound* webhook authenticity. As a stopgap
+  // until real docs/credentials are available, require a shared secret
+  // (configured with ATH Móvil as part of the callback URL, since many
+  // simple webhook integrations don't support custom headers) so this
+  // endpoint isn't wide open to anyone who discovers the URL. If the secret
+  // isn't configured, the check is skipped (fails open) rather than
+  // breaking an already-working integration silently.
+  const expectedSecret = process.env.ATH_MOVIL_WEBHOOK_SECRET;
+  if (expectedSecret) {
+    const providedSecret = req.query.secret || req.get('X-Webhook-Secret');
+    if (providedSecret !== expectedSecret) {
+      console.error('[ATH_MOVIL WEBHOOK] Rejected: invalid or missing shared secret');
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+  } else {
+    console.warn('[ATH_MOVIL WEBHOOK] ATH_MOVIL_WEBHOOK_SECRET is not set - webhook authenticity is NOT verified.');
+  }
+
   const webhookData = athMovilService.processWebhook(req.body);
 
   if (!webhookData.internalReferenceId) {

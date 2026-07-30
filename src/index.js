@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import { PrismaClient } from '@prisma/client';
 
@@ -14,10 +15,17 @@ import uploadRoutes from './routes/upload.js';
 import paymentRoutes from './routes/payment.js';
 import publicRoutes from './routes/public.js';
 import supportRoutes from './routes/support.js';
+// NEXT: mount additional routers here as they're built, e.g.
+//   import walletRoutes from './routes/wallet.js';
+//   app.use('/api/wallet', walletRoutes);
+// `artistRoutes` above already covers /api/artist/* (releases, wallet,
+// analytics, profiles) - extend that router directly rather than adding a
+// parallel one unless a genuinely separate resource is being introduced.
 
 // Import middleware
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { authenticate } from './middleware/auth.js';
+import { csrfProtection } from './middleware/csrf.js';
 
 // Initialize
 const app = express();
@@ -59,12 +67,16 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-Id'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-Id', 'X-CSRF-Token'],
 }));
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Cookies - required to read the eajmusic_token / eajmusic_refresh /
+// eajmusic_csrf cookies set by src/utils/cookies.js.
+app.use(cookieParser());
 
 // Logging
 if (process.env.NODE_ENV !== 'test') {
@@ -99,9 +111,21 @@ if (process.env.NODE_ENV === 'production') {
   app.use('/uploads', authenticate, express.static('uploads'));
 }
 
+// CSRF (double-submit cookie) - must run after cookieParser (reads the
+// eajmusic_csrf cookie) and after body parsing is irrelevant here since it
+// only inspects the header/cookie, but it must run before the route
+// handlers it's protecting.
+app.use(csrfProtection);
+
 // ===========================================
 // ROUTES
 // ===========================================
+
+// Simple liveness check for load balancers / uptime monitors - no DB call,
+// always 200 as long as the process is up.
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+});
 
 // Health check
 app.get('/api/health', async (req, res) => {

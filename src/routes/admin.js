@@ -1,16 +1,28 @@
 import { Router } from 'express';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { PrismaClient } from '@prisma/client';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { authenticate, isAdmin } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
+import { requireRole, requirePermission } from '../middleware/rbac.js';
 import { validate } from '../validators/auth.js';
 import { adminReviewSchema } from '../validators/release.js';
+import {
+  createEmployeeSchema,
+  updateUserRoleSchema,
+  updateUserStatusSchema,
+  updateSettingSchema,
+} from '../validators/admin.js';
+import { moderateTestimonialSchema } from '../validators/testimonial.js';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-// All routes require authentication and admin role
+// All routes require authentication and at least ADMIN/SUPER_ADMIN; several
+// routes below layer a finer requirePermission()/requireRole('SUPER_ADMIN')
+// check on top of this baseline.
 router.use(authenticate);
-router.use(isAdmin);
+router.use(requireRole('ADMIN', 'SUPER_ADMIN'));
 
 // ===========================================
 // DASHBOARD STATS
@@ -53,8 +65,10 @@ router.get('/stats', asyncHandler(async (req, res) => {
 // ===========================================
 // USERS MANAGEMENT
 // ===========================================
-router.get('/users', asyncHandler(async (req, res) => {
+router.get('/users', requirePermission('users:read'), asyncHandler(async (req, res) => {
   const { role, status, search, page = 1, limit = 20 } = req.query;
+  const pageNum = parseInt(page) || 1;
+  const limitNum = parseInt(limit) || 20;
 
   const where = {
     ...(role && { role }),
@@ -80,27 +94,86 @@ router.get('/users', asyncHandler(async (req, res) => {
         createdAt: true,
         lastLoginAt: true,
         subscription: {
-          select: { plan: true, isActive: true },
+          select: { plan: true, commissionRate: true, isActive: true, expiresAt: true },
         },
         _count: {
           select: { releases: true },
         },
       },
       orderBy: { createdAt: 'desc' },
-      skip: (parseInt(page) - 1) * parseInt(limit),
-      take: parseInt(limit),
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
     }),
     prisma.user.count({ where }),
   ]);
 
+  // Matches frontend's PaginatedResponse<T> = {data, total, page, limit, totalPages}
   res.json({
-    users,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      total,
-      pages: Math.ceil(total / parseInt(limit)),
+    data: users,
+    total,
+    page: pageNum,
+    limit: limitNum,
+    totalPages: limitNum > 0 ? Math.ceil(total / limitNum) : 0,
+  });
+}));
+
+// ===========================================
+// CREATE EMPLOYEE ACCOUNT (Super Admin only)
+// ===========================================
+router.post('/users', requireRole('SUPER_ADMIN'), validate(createEmployeeSchema), asyncHandler(async (req, res) => {
+  const { email, name, password, role, permissions } = req.body;
+
+  const existingUser = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  if (existingUser) {
+    return res.status(409).json({
+      error: 'Conflict',
+      message: 'An account with this email already exists',
+    });
+  }
+
+  // If no password was supplied, generate a one-time temporary password and
+  // return it in the response - it can never be recovered again since only
+  // its bcrypt hash is stored.
+  const generatedPassword = password || crypto.randomBytes(9).toString('base64url');
+  const passwordHash = await bcrypt.hash(generatedPassword, parseInt(process.env.BCRYPT_ROUNDS) || 12);
+
+  const user = await prisma.user.create({
+    data: {
+      email: email.toLowerCase(),
+      passwordHash,
+      name,
+      role,
+      status: 'ACTIVE',
+      permissions: permissions && permissions.length > 0 ? permissions : undefined,
+      avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`,
     },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      status: true,
+      permissions: true,
+      createdAt: true,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'EMPLOYEE_ACCOUNT_CREATED',
+      entityType: 'User',
+      entityId: user.id,
+      newValues: { email: user.email, role, permissions },
+      ipAddress: req.ip,
+    },
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Employee account created successfully',
+    user,
+    ...(!password && { temporaryPassword: generatedPassword }),
   });
 }));
 
@@ -141,15 +214,8 @@ router.get('/users/:id', asyncHandler(async (req, res) => {
   res.json({ user });
 }));
 
-router.patch('/users/:id/status', asyncHandler(async (req, res) => {
+router.patch('/users/:id/status', requirePermission('users:status'), validate(updateUserStatusSchema), asyncHandler(async (req, res) => {
   const { status } = req.body;
-
-  if (!['ACTIVE', 'SUSPENDED', 'PENDING'].includes(status)) {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Invalid status',
-    });
-  }
 
   const user = await prisma.user.update({
     where: { id: req.params.id },
@@ -181,23 +247,11 @@ router.patch('/users/:id/status', asyncHandler(async (req, res) => {
   });
 }));
 
-router.patch('/users/:id/role', asyncHandler(async (req, res) => {
+// Super-Admin-only: role changes (including granting ADMIN/SUPPORT/REVIEWER/
+// FINANCE/SUPER_ADMIN) are the most sensitive privilege-escalation surface
+// in the admin API.
+router.patch('/users/:id/role', requireRole('SUPER_ADMIN'), validate(updateUserRoleSchema), asyncHandler(async (req, res) => {
   const { role } = req.body;
-
-  if (!['ARTIST', 'LABEL', 'ADMIN'].includes(role)) {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Invalid role',
-    });
-  }
-
-  // Only super admin can create admins
-  if (role === 'ADMIN' && req.user.role !== 'SUPER_ADMIN') {
-    return res.status(403).json({
-      error: 'Forbidden',
-      message: 'Only super admins can assign admin role',
-    });
-  }
 
   const user = await prisma.user.update({
     where: { id: req.params.id },
@@ -880,7 +934,7 @@ router.post('/tickets/:id/reply', asyncHandler(async (req, res) => {
     });
   }
 
-  const newMessage = await prisma.ticketMessage.create({
+  const newMessage = await prisma.supportTicketMessage.create({
     data: {
       ticketId: ticket.id,
       userId: req.user.id,
@@ -1045,19 +1099,22 @@ router.patch('/users/:id/plan', asyncHandler(async (req, res) => {
 // ===========================================
 // PLATFORM SETTINGS
 // ===========================================
-router.get('/settings', asyncHandler(async (req, res) => {
+// Matches AdminService.getSettings(): Record<string, { value, description }>
+router.get('/settings', requirePermission('settings:read'), asyncHandler(async (req, res) => {
   const settings = await prisma.platformSetting.findMany();
   const settingsMap = {};
-  settings.forEach(s => { settingsMap[s.key] = s.value; });
-  res.json({ settings: settingsMap });
+  settings.forEach(s => {
+    settingsMap[s.key] = { value: s.value, description: s.description || '' };
+  });
+  res.json(settingsMap);
 }));
 
-router.put('/settings/:key', asyncHandler(async (req, res) => {
+router.put('/settings/:key', requirePermission('settings:write'), validate(updateSettingSchema), asyncHandler(async (req, res) => {
   const { value, description } = req.body;
 
   const setting = await prisma.platformSetting.upsert({
     where: { key: req.params.key },
-    update: { value, ...(description && { description }) },
+    update: { value, ...(description !== undefined && { description }) },
     create: { key: req.params.key, value, description: description || '' },
   });
 
@@ -1073,6 +1130,74 @@ router.put('/settings/:key', asyncHandler(async (req, res) => {
   });
 
   res.json({ success: true, setting });
+}));
+
+// ===========================================
+// TESTIMONIALS MODERATION
+// ===========================================
+router.get('/testimonials', requirePermission('testimonials:moderate'), asyncHandler(async (req, res) => {
+  const { status, page = 1, limit = 20 } = req.query;
+  const pageNum = parseInt(page) || 1;
+  const limitNum = parseInt(limit) || 20;
+
+  const where = status ? { status } : {};
+
+  const [testimonials, total] = await Promise.all([
+    prisma.testimonial.findMany({
+      where,
+      include: {
+        artistProfile: { select: { id: true, name: true, avatarUrl: true } },
+        reviewedBy: { select: { id: true, name: true } },
+      },
+      orderBy: { submittedAt: 'desc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+    }),
+    prisma.testimonial.count({ where }),
+  ]);
+
+  res.json({
+    data: testimonials,
+    total,
+    page: pageNum,
+    limit: limitNum,
+    totalPages: limitNum > 0 ? Math.ceil(total / limitNum) : 0,
+  });
+}));
+
+router.patch('/testimonials/:id', requirePermission('testimonials:moderate'), validate(moderateTestimonialSchema), asyncHandler(async (req, res) => {
+  const { status } = req.body;
+
+  const existing = await prisma.testimonial.findUnique({ where: { id: req.params.id } });
+  if (!existing) {
+    return res.status(404).json({ error: 'Not Found', message: 'Testimonial not found' });
+  }
+
+  const testimonial = await prisma.testimonial.update({
+    where: { id: req.params.id },
+    data: {
+      status,
+      reviewedAt: new Date(),
+      reviewedById: req.user.id,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'TESTIMONIAL_MODERATED',
+      entityType: 'Testimonial',
+      entityId: testimonial.id,
+      newValues: { status },
+      ipAddress: req.ip,
+    },
+  });
+
+  res.json({
+    success: true,
+    message: `Testimonial ${status === 'APPROVED' ? 'approved' : 'rejected'}`,
+    testimonial,
+  });
 }));
 
 export default router;

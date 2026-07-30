@@ -1,21 +1,35 @@
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
+import { ACCESS_COOKIE } from '../utils/cookies.js';
 
 const prisma = new PrismaClient();
+
+// Cookie first (the primary auth mechanism now that tokens are issued as
+// httpOnly cookies scoped to .eajmusic.com), falling back to the
+// Authorization: Bearer header - keeps local/API-tool testing (curl,
+// Postman, etc.) working without needing to fabricate a cookie jar.
+function extractToken(req) {
+  if (req.cookies?.[ACCESS_COOKIE]) {
+    return req.cookies[ACCESS_COOKIE];
+  }
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authHeader.split(' ')[1];
+  }
+  return null;
+}
 
 // Verify JWT token middleware
 export const authenticate = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    const token = extractToken(req);
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!token) {
       return res.status(401).json({
         error: 'Unauthorized',
         message: 'No token provided',
       });
     }
-
-    const token = authHeader.split(' ')[1];
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
@@ -44,6 +58,7 @@ export const authenticate = async (req, res, next) => {
         role: true,
         status: true,
         avatarUrl: true,
+        permissions: true,
         subscription: {
           select: {
             plan: true,
@@ -100,13 +115,12 @@ export const authenticate = async (req, res, next) => {
 // Optional authentication (doesn't fail if no token)
 export const optionalAuth = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
+    const token = extractToken(req);
 
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!token) {
       return next();
     }
 
-    const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const user = await prisma.user.findUnique({
@@ -117,6 +131,7 @@ export const optionalAuth = async (req, res, next) => {
         name: true,
         role: true,
         status: true,
+        permissions: true,
       },
     });
 

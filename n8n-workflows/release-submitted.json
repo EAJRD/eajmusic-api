@@ -1,0 +1,79 @@
+{
+  "name": "EAJMUSIC - Release Submitted Alert",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "release-submitted",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "webhook-release-submitted",
+      "name": "Webhook: release-submitted",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [260, 300],
+      "webhookId": "REPLACE_WITH_N8N_GENERATED_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "message",
+              "type": "string",
+              "value": "=🎵 *Nuevo lanzamiento enviado a revisión*\n\nTítulo: {{$json.body.title}}\nRelease ID: `{{$json.body.releaseId}}`\nArtista (userId): `{{$json.body.userId}}`\nEnviado: {{$json.body.submittedAt}}\n\nRevísalo en: https://eaj.eajmusic.com/releases"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-message",
+      "name": "Format Telegram Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID",
+        "text": "={{$json.message}}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-send",
+      "name": "Telegram: Send Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [700, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
+          "name": "EAJMUSIC Telegram Alerts"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook: release-submitted": {
+      "main": [[{ "node": "Format Telegram Message", "type": "main", "index": 0 }]]
+    },
+    "Format Telegram Message": {
+      "main": [[{ "node": "Telegram: Send Alert", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "_eajmusicNotes": {
+    "backendEventSource": "eajmusic-api src/routes/artist.js — POST /artist/releases/:id/submit fires this after the release status is set to PENDING (fire-and-forget).",
+    "expectedPayload": { "releaseId": "string", "userId": "string", "title": "string", "submittedAt": "ISO date string" },
+    "beforeActivating": [
+      "Same Telegram credential setup as testimonial-submitted.json.",
+      "Route to whoever holds the REVIEWER role if you want this separate from general alerts."
+    ]
+  }
+}

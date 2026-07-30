@@ -1,16 +1,25 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { authenticate, isArtist } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
+import { requireRole } from '../middleware/rbac.js';
 import { validate } from '../validators/auth.js';
 import { createReleaseSchema, updateReleaseSchema, submitReleaseSchema } from '../validators/release.js';
+import { notifyN8n } from '../services/n8nWebhookService.js';
 
 const router = Router();
 const prisma = new PrismaClient();
 
-// All routes require authentication and artist role
+// All routes require authentication and an artist-facing role. Uses the
+// rbac.js requireRole gate (not auth.js's ad-hoc isArtist helper) so this
+// router participates in the same RBAC system as admin.js. Release
+// approval/rejection itself lives entirely in admin.js (gated by
+// requirePermission('releases:approve'/'releases:reject') for
+// REVIEWER/ADMIN/SUPER_ADMIN) - everything below is scoped to the caller's
+// own resources (userId: req.user.id), so there is no approval-adjacent
+// logic here to open up to REVIEWER.
 router.use(authenticate);
-router.use(isArtist);
+router.use(requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUPER_ADMIN'));
 
 // ===========================================
 // STATS & DASHBOARD
@@ -30,42 +39,53 @@ router.get('/stats', asyncHandler(async (req, res) => {
     },
   });
 
-  // Calculate totals
+  // Calculate totals, and 30-day-vs-prior-30-day streams for monthlyGrowth
   let totalStreams = 0;
-  let totalRevenue = 0;
+  let activeTracks = 0;
+
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const sixtyDaysAgo = new Date();
+  sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+
+  let streamsLast30 = 0;
+  let streamsPrior30 = 0;
 
   for (const release of releases) {
     for (const track of release.tracks) {
+      if (track.status === 'READY') activeTracks += 1;
       for (const stat of track.streamingStats) {
-        totalStreams += Number(stat.streams);
-        totalRevenue += Number(stat.revenueNet);
+        const streams = Number(stat.streams);
+        totalStreams += streams;
+        if (stat.date >= thirtyDaysAgo) {
+          streamsLast30 += streams;
+        } else if (stat.date >= sixtyDaysAgo) {
+          streamsPrior30 += streams;
+        }
       }
     }
   }
+
+  const monthlyGrowth = streamsPrior30 > 0
+    ? Number((((streamsLast30 - streamsPrior30) / streamsPrior30) * 100).toFixed(1))
+    : (streamsLast30 > 0 ? 100 : 0);
 
   // Get wallet info
   const wallet = await prisma.wallet.findUnique({
     where: { userId },
   });
 
-  // Get monthly listeners (simplified - in production would be more complex)
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-
-  const recentStats = await prisma.streamingStat.aggregate({
-    where: {
-      track: { release: { userId } },
-      date: { gte: thirtyDaysAgo },
-    },
-    _sum: { streams: true },
-  });
-
   res.json({
+    // Matches frontend's ArtistStats shape.
+    totalReleases: releases.length,
     totalStreams,
-    totalRevenue: wallet?.lifetimeEarnings || 0,
+    totalEarnings: Number(wallet?.lifetimeEarnings || 0),
+    monthlyGrowth,
+    activeTracks,
+    // Bonus fields (not part of ArtistStats, kept for dashboard widgets).
     availableBalance: wallet?.availableBalance || 0,
     pendingBalance: wallet?.pendingBalance || 0,
-    monthlyListeners: Math.floor(Number(recentStats._sum.streams || 0) / 10),
+    monthlyListeners: Math.floor(streamsLast30 / 10),
     followers: 0, // TODO: Implement real follower tracking
   });
 }));
@@ -77,6 +97,8 @@ router.get('/stats', asyncHandler(async (req, res) => {
 // Get all releases for current user
 router.get('/releases', asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query;
+  const pageNum = parseInt(page) || 1;
+  const limitNum = parseInt(limit) || 20;
 
   const where = {
     userId: req.user.id,
@@ -95,6 +117,7 @@ router.get('/releases', asyncHandler(async (req, res) => {
             durationMs: true,
             isrc: true,
             status: true,
+            audioUrl: true,
           },
           orderBy: { trackNumber: 'asc' },
         },
@@ -103,20 +126,19 @@ router.get('/releases', asyncHandler(async (req, res) => {
         },
       },
       orderBy: { createdAt: 'desc' },
-      skip: (parseInt(page) - 1) * parseInt(limit),
-      take: parseInt(limit),
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
     }),
     prisma.release.count({ where }),
   ]);
 
+  // Matches frontend's PaginatedResponse<Release> = {data, total, page, limit, totalPages}
   res.json({
-    releases,
-    pagination: {
-      page: parseInt(page),
-      limit: parseInt(limit),
-      total,
-      pages: Math.ceil(total / parseInt(limit)),
-    },
+    data: releases.map((r) => ({ ...r, artistName: r.artistProfile?.name })),
+    total,
+    page: pageNum,
+    limit: limitNum,
+    totalPages: limitNum > 0 ? Math.ceil(total / limitNum) : 0,
   });
 }));
 
@@ -146,7 +168,8 @@ router.get('/releases/:id', asyncHandler(async (req, res) => {
     });
   }
 
-  res.json({ release });
+  // Matches frontend's `api.get<Release>('/artist/releases/:id')` contract.
+  res.json({ ...release, artistName: release.artistProfile?.name });
 }));
 
 // Create new release
@@ -229,6 +252,7 @@ router.post('/releases', validate(createReleaseSchema), asyncHandler(async (req,
     },
     include: {
       tracks: true,
+      artistProfile: { select: { name: true } },
     },
   });
 
@@ -244,11 +268,8 @@ router.post('/releases', validate(createReleaseSchema), asyncHandler(async (req,
     },
   });
 
-  res.status(201).json({
-    success: true,
-    message: 'Release created successfully',
-    release,
-  });
+  // Matches frontend's `api.post<Release>('/artist/releases', ...)` contract.
+  res.status(201).json({ ...release, artistName: release.artistProfile?.name });
 }));
 
 // Update release
@@ -306,14 +327,14 @@ router.patch('/releases/:id', validate(updateReleaseSchema), asyncHandler(async 
       ...(coverArtKey !== undefined && { coverArtKey }),
       ...(status && { status }),
     },
-    include: { tracks: true },
+    include: {
+      tracks: true,
+      artistProfile: { select: { name: true } },
+    },
   });
 
-  res.json({
-    success: true,
-    message: 'Release updated successfully',
-    release: updatedRelease,
-  });
+  // Matches frontend's `api.patch<Release>('/artist/releases/:id', ...)` contract.
+  res.json({ ...updatedRelease, artistName: updatedRelease.artistProfile?.name });
 }));
 
 // Submit release for review
@@ -381,6 +402,16 @@ router.post('/releases/:id/submit', validate(submitReleaseSchema), asyncHandler(
     message: 'Release submitted for review',
     release: updatedRelease,
   });
+
+  // Fire-and-forget notification to n8n (REVIEWER role alert). Intentionally
+  // not awaited - never blocks the response above, and no-ops safely if
+  // n8n isn't configured/reachable.
+  notifyN8n('release-submitted', {
+    releaseId: updatedRelease.id,
+    userId: req.user.id,
+    title: updatedRelease.title,
+    submittedAt: updatedRelease.submittedAt,
+  });
 }));
 
 // Delete release (only drafts)
@@ -425,7 +456,8 @@ router.get('/profiles', asyncHandler(async (req, res) => {
     orderBy: { createdAt: 'desc' },
   });
 
-  res.json({ profiles });
+  // Matches frontend's `api.get<Array<{id,name,avatarUrl,isVerified}>>('/artist/profiles')` contract.
+  res.json(profiles);
 }));
 
 router.post('/profiles', asyncHandler(async (req, res) => {
@@ -457,11 +489,8 @@ router.post('/profiles', asyncHandler(async (req, res) => {
     },
   });
 
-  res.status(201).json({
-    success: true,
-    message: 'Artist profile created',
-    profile,
-  });
+  // Matches frontend's `api.post<{id, name}>('/artist/profiles', ...)` contract.
+  res.status(201).json(profile);
 }));
 
 router.patch('/profiles/:id', asyncHandler(async (req, res) => {
@@ -590,14 +619,22 @@ router.get('/analytics/overview', asyncHandler(async (req, res) => {
       : 0,
   }));
 
+  const totalStreams = stats.reduce((sum, s) => sum + Number(s._sum.streams || 0), 0);
+  const totalRevenue = stats.reduce((sum, s) => sum + Number(s._sum.revenueNet || 0), 0);
+
   res.json({
+    // Matches frontend's `{streams, revenue, topCountries: [{country, streams}]}` contract.
+    streams: totalStreams,
+    revenue: totalRevenue,
+    topCountries: countryBreakdown.map((c) => ({ country: c.countryCode, streams: c.streams })),
+    // Bonus fields for richer dashboard widgets.
     period,
     dailyStats: stats,
     topTracks: topTracksWithDetails,
     countryBreakdown,
     totals: {
-      streams: stats.reduce((sum, s) => sum + Number(s._sum.streams || 0), 0),
-      revenue: stats.reduce((sum, s) => sum + Number(s._sum.revenueNet || 0), 0),
+      streams: totalStreams,
+      revenue: totalRevenue,
       saves: stats.reduce((sum, s) => sum + Number(s._sum.saves || 0), 0),
       playlistAdds: stats.reduce((sum, s) => sum + Number(s._sum.playlistAdds || 0), 0),
     },
@@ -626,8 +663,15 @@ router.get('/wallet', asyncHandler(async (req, res) => {
     _sum: { netRevenue: true },
   });
 
+  // Matches frontend's Wallet shape at top level: {availableBalance,
+  // pendingBalance, lifetimeEarnings, currency, minPayoutThreshold}.
   res.json({
-    wallet,
+    availableBalance: wallet?.availableBalance || 0,
+    pendingBalance: wallet?.pendingBalance || 0,
+    lifetimeEarnings: wallet?.lifetimeEarnings || 0,
+    currency: wallet?.currency || 'USD',
+    minPayoutThreshold: wallet?.minPayoutThreshold || 50,
+    // Bonus fields.
     recentPayouts,
     pendingRoyalties: pendingRoyalties._sum.netRevenue || 0,
   });
@@ -684,10 +728,23 @@ router.post('/wallet/request-payout', asyncHandler(async (req, res) => {
     });
   });
 
+  // Matches frontend's `api.post<{success, payoutId}>('/artist/wallet/request-payout', ...)` contract.
   res.status(201).json({
     success: true,
+    payoutId: payout.id,
     message: 'Payout request submitted',
     payout,
+  });
+
+  // Fire-and-forget notification to n8n (FINANCE role alert). Intentionally
+  // not awaited - never blocks the response above, and no-ops safely if
+  // n8n isn't configured/reachable.
+  notifyN8n('payout-requested', {
+    payoutId: payout.id,
+    userId: req.user.id,
+    amount: payout.amount,
+    currency: wallet.currency || 'USD',
+    requestedAt: payout.requestedAt,
   });
 }));
 
@@ -752,7 +809,8 @@ router.get('/tickets', asyncHandler(async (req, res) => {
     orderBy: { updatedAt: 'desc' },
   });
 
-  res.json({ tickets });
+  // Matches frontend's `api.get<SupportTicket[]>('/artist/tickets')` contract.
+  res.json(tickets);
 }));
 
 router.post('/tickets', asyncHandler(async (req, res) => {
@@ -774,11 +832,8 @@ router.post('/tickets', asyncHandler(async (req, res) => {
     include: { messages: true },
   });
 
-  res.status(201).json({
-    success: true,
-    message: 'Support ticket created',
-    ticket,
-  });
+  // Matches frontend's `api.post<SupportTicket>('/artist/tickets', ...)` contract.
+  res.status(201).json(ticket);
 }));
 
 router.post('/tickets/:id/reply', asyncHandler(async (req, res) => {
@@ -798,7 +853,9 @@ router.post('/tickets/:id/reply', asyncHandler(async (req, res) => {
     });
   }
 
-  const newMessage = await prisma.ticketMessage.create({
+  // NOTE: model is `SupportTicketMessage` (see prisma/schema.prisma), not
+  // `TicketMessage` - `prisma.ticketMessage` does not exist and would throw.
+  const newMessage = await prisma.supportTicketMessage.create({
     data: {
       ticketId: ticket.id,
       userId: req.user.id,
@@ -814,9 +871,12 @@ router.post('/tickets/:id/reply', asyncHandler(async (req, res) => {
     });
   }
 
+  // Matches frontend's `api.post<{success}>('/artist/tickets/:id/reply', ...)`
+  // contract. Field renamed from `message` (a string elsewhere in this API)
+  // to `ticketMessage` to avoid the ambiguity of `message` holding an object.
   res.status(201).json({
     success: true,
-    message: newMessage,
+    ticketMessage: newMessage,
   });
 }));
 

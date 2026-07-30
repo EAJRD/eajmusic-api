@@ -5,7 +5,8 @@ import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaClient } from '@prisma/client';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { authenticate, isArtist } from '../middleware/auth.js';
+import { authenticate } from '../middleware/auth.js';
+import { requireRole } from '../middleware/rbac.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -44,42 +45,51 @@ const storage = multer.diskStorage({
   },
 });
 
-// File filter
-const fileFilter = (req, file, cb) => {
-  // Audio files
-  const allowedAudioTypes = [
-    'audio/wav',
-    'audio/x-wav',
-    'audio/flac',
-    'audio/x-flac',
-    'audio/mpeg',
-    'audio/mp3',
-    'audio/mp4',
-    'audio/m4a',
-    'audio/x-m4a',
-  ];
+// File filters
+//
+// Two separate filters (audio-only, image-only) rather than one filter that
+// accepts "audio OR image" - the previous single shared `fileFilter` meant
+// the /upload/audio endpoint (using `uploadAudio`) would happily accept a
+// PNG/JPEG too, since it only checked "is this mimetype audio-ish OR
+// image-ish", not "is this the right kind of file for this endpoint". Each
+// filter also cross-checks the file extension against the claimed mimetype
+// as a cheap defense-in-depth measure against mimetype spoofing (the
+// Content-Type on a multipart part is client-supplied and not trustworthy on
+// its own).
+const ALLOWED_AUDIO_MIME_TYPES = [
+  'audio/wav',
+  'audio/x-wav',
+  'audio/flac',
+  'audio/x-flac',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/mp4',
+  'audio/m4a',
+  'audio/x-m4a',
+];
+const ALLOWED_AUDIO_EXTENSIONS = ['.wav', '.flac', '.mp3', '.mp4', '.m4a'];
 
-  // Image files
-  const allowedImageTypes = [
-    'image/jpeg',
-    'image/jpg',
-    'image/png',
-  ];
+const ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png'];
+const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png'];
 
-  const isAudio = allowedAudioTypes.includes(file.mimetype);
-  const isImage = allowedImageTypes.includes(file.mimetype);
+function makeFileFilter(allowedMimeTypes, allowedExtensions, label) {
+  return (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedMimeTypes.includes(file.mimetype) && allowedExtensions.includes(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Invalid file type. Only ${label} files are allowed.`), false);
+    }
+  };
+}
 
-  if (isAudio || isImage) {
-    cb(null, true);
-  } else {
-    cb(new Error(`Invalid file type: ${file.mimetype}`), false);
-  }
-};
+const audioFileFilter = makeFileFilter(ALLOWED_AUDIO_MIME_TYPES, ALLOWED_AUDIO_EXTENSIONS, 'audio (WAV, FLAC, MP3, M4A)');
+const imageFileFilter = makeFileFilter(ALLOWED_IMAGE_MIME_TYPES, ALLOWED_IMAGE_EXTENSIONS, 'image (JPG, PNG)');
 
 // Multer instances
 const uploadAudio = multer({
   storage,
-  fileFilter,
+  fileFilter: audioFileFilter,
   limits: {
     fileSize: parseInt(process.env.MAX_FILE_SIZE) || 50 * 1024 * 1024, // 50MB default
   },
@@ -87,14 +97,7 @@ const uploadAudio = multer({
 
 const uploadImage = multer({
   storage,
-  fileFilter: (req, file, cb) => {
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Only JPG and PNG images are allowed'), false);
-    }
-  },
+  fileFilter: imageFileFilter,
   limits: {
     fileSize: 10 * 1024 * 1024, // 10MB for images
   },
@@ -105,7 +108,7 @@ const uploadImage = multer({
 // ===========================================
 
 // Upload audio track
-router.post('/audio', authenticate, isArtist, uploadAudio.single('file'), asyncHandler(async (req, res) => {
+router.post('/audio', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUPER_ADMIN'), uploadAudio.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({
       error: 'Bad Request',
@@ -159,22 +162,26 @@ router.post('/audio', authenticate, isArtist, uploadAudio.single('file'), asyncH
     },
   });
 
+  // Matches frontend's `api.upload<{url, key, durationMs}>('/upload/audio', ...)`
+  // contract - fields flattened to the top level (no `file` wrapper).
+  // `durationMs` is not computed server-side (no audio-probing library is a
+  // dependency here) - left null; the track's real durationMs is populated
+  // once processing/transcoding fills it in.
   res.status(201).json({
+    url: fileUrl,
+    key: fileKey,
+    durationMs: null,
     success: true,
     message: 'Audio file uploaded successfully',
-    file: {
-      key: fileKey,
-      url: fileUrl,
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: req.file.size,
-      mimetype: req.file.mimetype,
-    },
+    filename: req.file.filename,
+    originalName: req.file.originalname,
+    size: req.file.size,
+    mimetype: req.file.mimetype,
   });
 }));
 
 // Upload multiple audio tracks
-router.post('/audio/batch', authenticate, isArtist, uploadAudio.array('files', 30), asyncHandler(async (req, res) => {
+router.post('/audio/batch', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUPER_ADMIN'), uploadAudio.array('files', 30), asyncHandler(async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({
       error: 'Bad Request',
@@ -193,15 +200,13 @@ router.post('/audio/batch', authenticate, isArtist, uploadAudio.array('files', 3
     mimetype: file.mimetype,
   }));
 
-  res.status(201).json({
-    success: true,
-    message: `${files.length} audio files uploaded successfully`,
-    files,
-  });
+  // Matches frontend's `api.uploadBatch<Array<{url,key,filename}>>('/upload/audio/batch', ...)`
+  // contract - a bare array, not wrapped in a `{files}` object.
+  res.status(201).json(files);
 }));
 
 // Upload cover art
-router.post('/cover', authenticate, isArtist, uploadImage.single('file'), asyncHandler(async (req, res) => {
+router.post('/cover', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUPER_ADMIN'), uploadImage.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({
       error: 'Bad Request',
@@ -234,16 +239,16 @@ router.post('/cover', authenticate, isArtist, uploadImage.single('file'), asyncH
     }
   }
 
+  // Matches frontend's `api.upload<{url, key}>('/upload/cover', ...)` contract
+  // - fields flattened to the top level (no `file` wrapper).
   res.status(201).json({
+    url: fileUrl,
+    key: fileKey,
     success: true,
     message: 'Cover art uploaded successfully',
-    file: {
-      key: fileKey,
-      url: fileUrl,
-      filename: req.file.filename,
-      originalName: req.file.originalname,
-      size: req.file.size,
-    },
+    filename: req.file.filename,
+    originalName: req.file.originalname,
+    size: req.file.size,
   });
 }));
 
@@ -265,13 +270,13 @@ router.post('/avatar', authenticate, uploadImage.single('file'), asyncHandler(as
     data: { avatarUrl: fileUrl },
   });
 
+  // Matches frontend's `api.upload<{url, key}>('/upload/avatar', file)`
+  // contract - fields flattened to the top level (no `file` wrapper).
   res.status(201).json({
+    url: fileUrl,
+    key: fileKey,
     success: true,
     message: 'Avatar uploaded successfully',
-    file: {
-      key: fileKey,
-      url: fileUrl,
-    },
   });
 }));
 
@@ -284,6 +289,30 @@ router.delete('/:type/:filename', authenticate, asyncHandler(async (req, res) =>
       error: 'Bad Request',
       message: 'Invalid file type',
     });
+  }
+
+  // Ownership check: previously any authenticated user could delete any
+  // uploaded file by knowing/guessing its filename, since this route only
+  // checked `authenticate` and never verified the file belonged to the
+  // caller. Admins bypass this (they may need to clean up on takedowns/user
+  // deletion); everyone else must own the resource the file is attached to
+  // (their own track's audio, their own release's cover art, or their own
+  // avatar).
+  const isPrivileged = ['ADMIN', 'SUPER_ADMIN'].includes(req.user.role);
+  if (!isPrivileged) {
+    const fileKey = `${type}/${filename}`;
+    const [ownedTrack, ownedRelease] = await Promise.all([
+      prisma.track.findFirst({ where: { audioKey: fileKey, release: { userId: req.user.id } } }),
+      prisma.release.findFirst({ where: { coverArtKey: fileKey, userId: req.user.id } }),
+    ]);
+    const isOwnAvatar = typeof req.user.avatarUrl === 'string' && req.user.avatarUrl.endsWith(`/${fileKey}`);
+
+    if (!ownedTrack && !ownedRelease && !isOwnAvatar) {
+      return res.status(403).json({
+        error: 'Forbidden',
+        message: 'You do not have permission to delete this file',
+      });
+    }
   }
 
   const filePath = path.join(uploadDir, type, filename);
@@ -306,7 +335,7 @@ router.delete('/:type/:filename', authenticate, asyncHandler(async (req, res) =>
 }));
 
 // Get upload signed URL (for S3-like services - placeholder)
-router.post('/presigned', authenticate, isArtist, asyncHandler(async (req, res) => {
+router.post('/presigned', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req, res) => {
   const { filename, contentType, fileSize } = req.body;
 
   // In production, generate S3 presigned URL here

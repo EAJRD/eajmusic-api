@@ -117,6 +117,22 @@ if (process.env.NODE_ENV === 'production') {
 // handlers it's protecting.
 app.use(csrfProtection);
 
+// Defense in depth: `new URLSearchParams({ role: undefined })` on the
+// frontend serializes an omitted optional filter as the literal string
+// "undefined" (e.g. `?role=undefined`), which route handlers then treat as a
+// real, truthy filter value instead of "no filter" - this broke
+// GET /admin/users and GET /admin/releases in production. The frontend was
+// fixed to stop sending this, but strip it here too so any other caller
+// (old cached bundle, direct API use) can't trigger the same class of bug.
+app.use((req, res, next) => {
+  for (const key of Object.keys(req.query)) {
+    if (req.query[key] === 'undefined' || req.query[key] === 'null') {
+      delete req.query[key];
+    }
+  }
+  next();
+});
+
 // ===========================================
 // ROUTES
 // ===========================================

@@ -16,6 +16,12 @@
     {
       "parameters": {
         "url": "https://api-api.eajmusic.com/api/health",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Origin", "value": "https://eajmusic.com" }
+          ]
+        },
         "options": {
           "timeout": 8000,
           "response": {

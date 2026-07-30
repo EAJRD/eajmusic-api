@@ -1,6 +1,6 @@
-# EAJMUSIC — n8n alert workflows
+# EAJMUSIC — n8n workflows
 
-Four workflow exports, ready to import into https://n8n.eajmusic.com/ (Workflows → Import from File).
+Five workflow exports, ready to import into https://n8n.eajmusic.com/ (Workflows → Import from File).
 
 | File | Trigger | Fires from |
 |---|---|---|
@@ -8,6 +8,7 @@ Four workflow exports, ready to import into https://n8n.eajmusic.com/ (Workflows
 | `payout-requested.json` | Webhook `POST /webhook/payout-requested` | `eajmusic-api` on artist payout request |
 | `release-submitted.json` | Webhook `POST /webhook/release-submitted` | `eajmusic-api` on release submitted for review |
 | `system-health-alert.json` | Schedule (every 5 min) | n8n itself polls `GET /api/health` — works even if the backend can't call out |
+| `file-upload-to-drive.json` | Webhook `POST /webhook/file-upload-to-drive` (synchronous, returns the Drive link) | `eajmusic-api` on every audio/cover/avatar upload — offloads storage off the LXC's disk onto Google Drive |
 
 ## Setup (one-time, in n8n's UI — nothing here touches this repo's code)
 
@@ -16,8 +17,9 @@ Four workflow exports, ready to import into https://n8n.eajmusic.com/ (Workflows
 3. **Import each JSON** via the n8n UI. After import, replace in each workflow:
    - `REPLACE_WITH_N8N_CREDENTIAL_ID` → the credential's real ID (n8n fills this in automatically once you select the credential on the Telegram node — you usually don't need to hand-edit this).
    - `REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID` → your chat ID from step 2.
-4. **Set `N8N_WEBHOOK_BASE_URL`** in `eajmusic-api`'s production `.env` to `https://n8n.eajmusic.com/webhook` so the backend's `notifyN8n()` calls (see `src/services/n8nWebhookService.js`) reach these three webhook workflows.
-5. **Activate** each workflow (toggle in the top-right of the n8n editor).
+4. **Set `N8N_WEBHOOK_BASE_URL`** in `eajmusic-api`'s production `.env` to `https://n8n.eajmusic.com/webhook` so the backend's `notifyN8n()` calls (see `src/services/n8nWebhookService.js`) reach these webhook workflows.
+5. **For `file-upload-to-drive.json` specifically**: also create a Google Drive OAuth2 credential and pick a target folder — see that file's own `_eajmusicNotes.beforeActivating` for the exact steps. This one must stay set to respond synchronously (already configured as `responseMode: responseNode`) since the backend waits for the real Drive link before deleting its local temp copy.
+6. **Activate** each workflow (toggle in the top-right of the n8n editor).
 
 ## Why these four and not more
 

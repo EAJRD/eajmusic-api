@@ -1,0 +1,104 @@
+{
+  "name": "EAJMUSIC - File Upload to Google Drive",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "file-upload-to-drive",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-file-upload",
+      "name": "Webhook: file-upload-to-drive",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "REPLACE_WITH_N8N_GENERATED_WEBHOOK_ID"
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "name": "={{$binary.file.fileName || 'upload-' + Date.now()}}",
+        "driveId": {
+          "mode": "list",
+          "value": "My Drive"
+        },
+        "folderId": {
+          "mode": "id",
+          "value": "REPLACE_WITH_YOUR_DRIVE_FOLDER_ID"
+        },
+        "inputDataFieldName": "file",
+        "options": {}
+      },
+      "id": "drive-upload",
+      "name": "Google Drive: Upload",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [460, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "REPLACE_WITH_N8N_CREDENTIAL_ID",
+          "name": "EAJMUSIC Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "1", "name": "driveFileId", "type": "string", "value": "={{$json.id}}" },
+            { "id": "2", "name": "driveUrl", "type": "string", "value": "={{$json.webContentLink || $json.webViewLink}}" },
+            { "id": "3", "name": "webViewLink", "type": "string", "value": "={{$json.webViewLink}}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { driveFileId: $json.driveFileId, driveUrl: $json.driveUrl, webViewLink: $json.webViewLink } }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.2,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Webhook: file-upload-to-drive": {
+      "main": [[{ "node": "Google Drive: Upload", "type": "main", "index": 0 }]]
+    },
+    "Google Drive: Upload": {
+      "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]]
+    },
+    "Format Response": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "_eajmusicNotes": {
+    "why": "eajmusic-api's LXC (192.168.0.253) only has a few hundred MB of free disk. Audio/cover/avatar uploads are forwarded here (multipart, field name 'file') instead of accumulating on that box — see src/services/n8nFileService.js. This workflow must respond synchronously (responseMode: responseNode, not 'onReceived') because the backend awaits driveUrl/driveFileId before it deletes its local temp copy and builds the API response.",
+    "backendCaller": "eajmusic-api src/services/n8nFileService.js -> POST {N8N_WEBHOOK_BASE_URL}/file-upload-to-drive, 60s timeout (audio files can be tens of MB). If this workflow is inactive, unreachable, or errors, the backend silently falls back to serving the file from local disk — uploads never hard-fail because of this integration.",
+    "beforeActivating": [
+      "1. Create a Google Drive OAuth2 credential in n8n (Credentials > New > Google Drive OAuth2 API), authorizing with the Google account/Workspace that should own the uploaded files.",
+      "2. Pick (or create) a Drive folder for EAJMUSIC uploads, copy its folder ID from the Drive URL, and replace REPLACE_WITH_YOUR_DRIVE_FOLDER_ID.",
+      "3. Replace REPLACE_WITH_N8N_CREDENTIAL_ID once you've selected the credential on the Google Drive node (n8n usually fills this in automatically).",
+      "4. Consider the target folder's sharing settings — driveUrl returned here is webContentLink, which requires the file (or folder) to be shared appropriately (e.g. 'Anyone with the link') if it needs to be playable/viewable directly by end users, not just accessible to the Drive account owner.",
+      "5. Set N8N_WEBHOOK_BASE_URL in eajmusic-api's production .env (same var the other workflows use) if not already set.",
+      "6. Activate the workflow."
+    ],
+    "knownLimitation": "Deleting a Drive-stored file isn't wired up yet (DELETE /upload/:type/:filename only handles files still on local disk) — flagged in upload.js, not built today."
+  }
+}

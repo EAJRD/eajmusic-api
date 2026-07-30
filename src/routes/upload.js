@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
+import { uploadToDriveAndCleanupLocal } from '../services/n8nFileService.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -118,9 +119,16 @@ router.post('/audio', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUP
 
   const { releaseId, trackNumber } = req.body;
 
-  // Generate file key/path
-  const fileKey = `audio/${req.file.filename}`;
-  const fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
+  // Generate file key/path (local fallback; overwritten below if the file
+  // makes it to Google Drive via n8n)
+  let fileKey = `audio/${req.file.filename}`;
+  let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
+
+  const driveResult = await uploadToDriveAndCleanupLocal(req.file.path, req.file.originalname, req.file.mimetype);
+  if (driveResult) {
+    fileUrl = driveResult.url;
+    fileKey = driveResult.key;
+  }
 
   // If releaseId and trackNumber provided, update the track
   if (releaseId && trackNumber) {
@@ -191,14 +199,29 @@ router.post('/audio/batch', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN'
 
   const baseUrl = getBaseUrl(req);
 
-  const files = req.files.map(file => ({
-    key: `audio/${file.filename}`,
-    url: `${baseUrl}/uploads/audio/${file.filename}`,
-    filename: file.filename,
-    originalName: file.originalname,
-    size: file.size,
-    mimetype: file.mimetype,
-  }));
+  // Sequential (not Promise.all) so a slow/failed Drive upload for one file
+  // can't race with another file's `unlink` of a similarly-named temp path,
+  // and so n8n isn't hit with up to 30 concurrent large uploads at once.
+  const files = [];
+  for (const file of req.files) {
+    let key = `audio/${file.filename}`;
+    let url = `${baseUrl}/uploads/audio/${file.filename}`;
+
+    const driveResult = await uploadToDriveAndCleanupLocal(file.path, file.originalname, file.mimetype);
+    if (driveResult) {
+      url = driveResult.url;
+      key = driveResult.key;
+    }
+
+    files.push({
+      key,
+      url,
+      filename: file.filename,
+      originalName: file.originalname,
+      size: file.size,
+      mimetype: file.mimetype,
+    });
+  }
 
   // Matches frontend's `api.uploadBatch<Array<{url,key,filename}>>('/upload/audio/batch', ...)`
   // contract - a bare array, not wrapped in a `{files}` object.
@@ -216,8 +239,14 @@ router.post('/cover', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUP
 
   const { releaseId } = req.body;
 
-  const fileKey = `images/${req.file.filename}`;
-  const fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
+  let fileKey = `images/${req.file.filename}`;
+  let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
+
+  const driveResult = await uploadToDriveAndCleanupLocal(req.file.path, req.file.originalname, req.file.mimetype);
+  if (driveResult) {
+    fileUrl = driveResult.url;
+    fileKey = driveResult.key;
+  }
 
   // If releaseId provided, update the release
   if (releaseId) {
@@ -261,8 +290,14 @@ router.post('/avatar', authenticate, uploadImage.single('file'), asyncHandler(as
     });
   }
 
-  const fileKey = `images/${req.file.filename}`;
-  const fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
+  let fileKey = `images/${req.file.filename}`;
+  let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
+
+  const driveResult = await uploadToDriveAndCleanupLocal(req.file.path, req.file.originalname, req.file.mimetype);
+  if (driveResult) {
+    fileUrl = driveResult.url;
+    fileKey = driveResult.key;
+  }
 
   // Update user avatar
   await prisma.user.update({
@@ -281,6 +316,12 @@ router.post('/avatar', authenticate, uploadImage.single('file'), asyncHandler(as
 }));
 
 // Delete file
+// NOTE: only handles files still on local disk (`type/filename`). Files that
+// were forwarded to Google Drive (key looks like `drive:<fileId>`, see
+// uploadToDriveAndCleanupLocal) aren't reachable through this route's
+// `:type/:filename` shape and won't be found here — deleting those requires
+// a separate Drive-delete call (not built yet; today's ask was just getting
+// uploads off this box's disk, not full lifecycle management).
 router.delete('/:type/:filename', authenticate, asyncHandler(async (req, res) => {
   const { type, filename } = req.params;
 

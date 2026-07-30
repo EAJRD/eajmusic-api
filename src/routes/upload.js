@@ -8,6 +8,7 @@ import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
 import { uploadToDriveAndCleanupLocal } from '../services/n8nFileService.js';
+import { uploadAndCleanupLocal as uploadToMinioAndCleanupLocal } from '../services/minioStorageService.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -17,6 +18,24 @@ const prisma = new PrismaClient();
 // deriving it from the request itself (correct as long as `trust proxy` is set)
 // instead of a hardcoded localhost that's always wrong once deployed.
 const getBaseUrl = (req) => process.env.API_URL || `${req.protocol}://${req.get('host')}`;
+
+// Storage chain: MinIO (self-hosted, same box, primary) -> Google Drive via
+// n8n (fallback if MinIO is down/unconfigured) -> local disk (final
+// fallback, today's original behavior). MinIO keeps the exact same
+// `audio/<uuid>.ext` / `images/<uuid>.ext` key the local-disk path always
+// used - GET /uploads/:type/:filename (src/index.js) transparently checks
+// MinIO before local disk, so the public URL never needs to change for it.
+// Drive is the one case that needs a different, external URL, hence the
+// {url,key} override return value.
+async function storeUploadedFile(localPath, fileKey, mimetype, originalFilename) {
+  const storedInMinio = await uploadToMinioAndCleanupLocal(localPath, fileKey, mimetype);
+  if (storedInMinio) return null;
+
+  const driveResult = await uploadToDriveAndCleanupLocal(localPath, originalFilename, mimetype);
+  if (driveResult) return driveResult;
+
+  return null; // both remote options failed/unconfigured - local file stays put
+}
 
 // ===========================================
 // STORAGE CONFIGURATION
@@ -124,10 +143,10 @@ router.post('/audio', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUP
   let fileKey = `audio/${req.file.filename}`;
   let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
 
-  const driveResult = await uploadToDriveAndCleanupLocal(req.file.path, req.file.originalname, req.file.mimetype);
-  if (driveResult) {
-    fileUrl = driveResult.url;
-    fileKey = driveResult.key;
+  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname);
+  if (override) {
+    fileUrl = override.url;
+    fileKey = override.key;
   }
 
   // If releaseId and trackNumber provided, update the track
@@ -207,10 +226,10 @@ router.post('/audio/batch', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN'
     let key = `audio/${file.filename}`;
     let url = `${baseUrl}/uploads/audio/${file.filename}`;
 
-    const driveResult = await uploadToDriveAndCleanupLocal(file.path, file.originalname, file.mimetype);
-    if (driveResult) {
-      url = driveResult.url;
-      key = driveResult.key;
+    const override = await storeUploadedFile(file.path, key, file.mimetype, file.originalname);
+    if (override) {
+      url = override.url;
+      key = override.key;
     }
 
     files.push({
@@ -242,10 +261,10 @@ router.post('/cover', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUP
   let fileKey = `images/${req.file.filename}`;
   let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
 
-  const driveResult = await uploadToDriveAndCleanupLocal(req.file.path, req.file.originalname, req.file.mimetype);
-  if (driveResult) {
-    fileUrl = driveResult.url;
-    fileKey = driveResult.key;
+  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname);
+  if (override) {
+    fileUrl = override.url;
+    fileKey = override.key;
   }
 
   // If releaseId provided, update the release
@@ -293,10 +312,10 @@ router.post('/avatar', authenticate, uploadImage.single('file'), asyncHandler(as
   let fileKey = `images/${req.file.filename}`;
   let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
 
-  const driveResult = await uploadToDriveAndCleanupLocal(req.file.path, req.file.originalname, req.file.mimetype);
-  if (driveResult) {
-    fileUrl = driveResult.url;
-    fileKey = driveResult.key;
+  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname);
+  if (override) {
+    fileUrl = override.url;
+    fileKey = override.key;
   }
 
   // Update user avatar

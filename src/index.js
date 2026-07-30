@@ -5,7 +5,10 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
+import fs from 'fs';
+import path from 'path';
 import { PrismaClient } from '@prisma/client';
+import { getObjectStream } from './services/minioStorageService.js';
 
 // Import routes
 import authRoutes from './routes/auth.js';
@@ -102,13 +105,43 @@ const authLimiter = rateLimit({
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
 
-// Static files for uploads (development only)
+// Serve uploads: MinIO first (primary storage as of the file-storage
+// migration - see src/services/minioStorageService.js), falling back to
+// local disk for anything uploaded before that / when MinIO has neither the
+// object nor is configured. The public URL shape (`/uploads/:type/:filename`)
+// never changed, so this is a transparent swap for existing clients/links.
+const UPLOAD_MIME_TYPES = {
+  '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.flac': 'audio/flac',
+  '.m4a': 'audio/mp4', '.mp4': 'audio/mp4',
+  '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+};
+
+async function serveUpload(req, res) {
+  const { type, filename } = req.params;
+  const objectKey = `${type}/${filename}`;
+  const contentType = UPLOAD_MIME_TYPES[path.extname(filename).toLowerCase()] || 'application/octet-stream';
+
+  const minioStream = await getObjectStream(objectKey);
+  if (minioStream) {
+    res.setHeader('Content-Type', contentType);
+    minioStream.on('error', () => { if (!res.headersSent) res.status(500).end(); });
+    return minioStream.pipe(res);
+  }
+
+  const localPath = path.join(process.env.UPLOAD_DIR || './uploads', type, filename);
+  if (fs.existsSync(localPath)) {
+    return res.sendFile(path.resolve(localPath));
+  }
+
+  res.status(404).json({ error: 'Not Found', message: 'File not found' });
+}
+
 if (process.env.NODE_ENV !== 'production') {
-  app.use('/uploads', express.static('uploads'));
+  app.get('/uploads/:type/:filename', serveUpload);
 }
 
 if (process.env.NODE_ENV === 'production') {
-  app.use('/uploads', authenticate, express.static('uploads'));
+  app.get('/uploads/:type/:filename', authenticate, serveUpload);
 }
 
 // CSRF (double-submit cookie) - must run after cookieParser (reads the

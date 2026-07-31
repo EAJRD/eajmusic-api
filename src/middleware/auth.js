@@ -1,8 +1,6 @@
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
 import { ACCESS_COOKIE } from '../utils/cookies.js';
-
-const prisma = new PrismaClient();
 
 // Cookie first (the primary auth mechanism now that tokens are issued as
 // httpOnly cookies scoped to .eajmusic.com), falling back to the

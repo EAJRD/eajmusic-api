@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
@@ -8,7 +8,6 @@ import { createReleaseSchema, updateReleaseSchema, submitReleaseSchema } from '.
 import { notifyN8n } from '../services/n8nWebhookService.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // All routes require authentication and an artist-facing role. Uses the
 // rbac.js requireRole gate (not auth.js's ad-hoc isArtist helper) so this
@@ -890,6 +889,65 @@ router.patch('/profile', asyncHandler(async (req, res) => {
     data: { name },
   });
   res.json({ success: true, user: updatedUser });
+}));
+
+// ===========================================
+// LABEL MANAGEMENT
+// ===========================================
+
+// This user's current managing label, plus - if this account IS a label -
+// the artists it manages. A LABEL-role user can own more than one Label row
+// per the schema, but in practice operates one; `ownedLabel` is the first.
+router.get('/label', asyncHandler(async (req, res) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    include: { managedByLabel: { select: { id: true, name: true, logoUrl: true } } },
+  });
+
+  let ownedLabel = null;
+  let managedArtists = [];
+  if (req.user.role === 'LABEL') {
+    ownedLabel = await prisma.label.findFirst({ where: { userId: req.user.id } });
+    if (ownedLabel) {
+      managedArtists = await prisma.user.findMany({
+        where: { labelId: ownedLabel.id },
+        select: { id: true, name: true, email: true, avatarUrl: true, createdAt: true },
+      });
+    }
+  }
+
+  res.json({ label: user?.managedByLabel || null, ownedLabel, managedArtists });
+}));
+
+// Artist requests to move under a different label. FREE-plan artists are
+// locked to whatever label they're on (defaults to the platform's own
+// "EAJMUSIC" label at signup - see src/services/labelService.js) - this is
+// the enforcement point for that rule.
+router.patch('/label', asyncHandler(async (req, res) => {
+  const { labelId } = req.body;
+  if (!labelId) {
+    return res.status(400).json({ error: 'Bad Request', message: 'labelId is required' });
+  }
+
+  const subscription = await prisma.subscription.findUnique({ where: { userId: req.user.id } });
+  if (subscription?.plan === 'FREE') {
+    return res.status(403).json({
+      error: 'Forbidden',
+      message: 'Upgrade your plan to change labels. Free artists stay on the default EAJMUSIC label.',
+    });
+  }
+
+  const label = await prisma.label.findUnique({ where: { id: labelId } });
+  if (!label) {
+    return res.status(404).json({ error: 'Not Found', message: 'Label not found' });
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: req.user.id },
+    data: { labelId },
+  });
+
+  res.json({ success: true, labelId: updated.labelId });
 }));
 
 export default router;

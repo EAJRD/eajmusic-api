@@ -3,7 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
@@ -11,7 +11,6 @@ import { uploadToDriveAndCleanupLocal } from '../services/n8nFileService.js';
 import { uploadAndCleanupLocal as uploadToMinioAndCleanupLocal } from '../services/minioStorageService.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Prefer the explicit API_URL (documented in server/.env.example) so the URL
 // is stable regardless of what host/port the request came in on; fall back to

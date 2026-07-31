@@ -118,12 +118,19 @@ model User {
   // employee capabilities (Support/Reviewer/Finance and beyond) without a
   // schema migration for every new permission.
   permissions      Json?
+  // Which Label manages this artist account (distinct from `labels` below,
+  // which is the Label(s) a LABEL-role user themselves operates). Every
+  // ARTIST defaults to the platform's own "EAJMUSIC" Label row (seeded, see
+  // prisma/seed.js) until they're moved to a real label - FREE-plan artists
+  // are blocked from changing this at the API layer (PATCH /artist/label).
+  labelId          String?    @map("label_id")
   createdAt        DateTime   @default(now()) @map("created_at")
   updatedAt        DateTime   @updatedAt @map("updated_at")
 
   // Relations
   artistProfiles       ArtistProfile[]
   labels               Label[]
+  managedByLabel       Label?                 @relation("LabelManagedArtists", fields: [labelId], references: [id])
   subscription         Subscription?
   releases             Release[]
   wallet               Wallet?
@@ -177,8 +184,9 @@ model Label {
   createdAt   DateTime @default(now()) @map("created_at")
 
   // Relations
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  releases Release[]
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  releases       Release[]
+  managedArtists User[]    @relation("LabelManagedArtists")
 
   @@map("labels")
 }

@@ -1,13 +1,12 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { validate } from '../validators/auth.js';
 import { submitTestimonialSchema } from '../validators/testimonial.js';
 import { notifyN8n } from '../services/n8nWebhookService.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Sane defaults if the `brand_config` PlatformSetting has never been set.
 const DEFAULT_BRAND_CONFIG = {
@@ -24,6 +23,69 @@ router.get('/theme', asyncHandler(async (req, res) => {
   const setting = await prisma.platformSetting.findUnique({ where: { key: 'brand_config' } });
   res.set('Cache-Control', 'public, max-age=60');
   res.json(setting?.value ?? DEFAULT_BRAND_CONFIG);
+}));
+
+// ===========================================
+// TALENT DIRECTORY (public, /talent on eajmusic.com)
+// ===========================================
+// Every artist profile with a name is listed - the platform doesn't have
+// enough real artists yet for a "verified only" filter to make sense (it'd
+// just be an empty page). `isVerified` is still returned so the frontend can
+// badge those artists once there's enough of a mix for that distinction to
+// matter.
+router.get('/talent', asyncHandler(async (req, res) => {
+  const { page = 1, limit = 24 } = req.query;
+  const pageNum = parseInt(page) || 1;
+  const limitNum = parseInt(limit) || 24;
+
+  const [artists, total] = await Promise.all([
+    prisma.artistProfile.findMany({
+      select: { id: true, name: true, bio: true, avatarUrl: true, isVerified: true },
+      orderBy: { createdAt: 'desc' },
+      skip: (pageNum - 1) * limitNum,
+      take: limitNum,
+    }),
+    prisma.artistProfile.count(),
+  ]);
+
+  res.set('Cache-Control', 'public, max-age=60');
+  res.json({
+    data: artists,
+    total,
+    page: pageNum,
+    limit: limitNum,
+    totalPages: limitNum > 0 ? Math.ceil(total / limitNum) : 0,
+  });
+}));
+
+// ===========================================
+// ANNOUNCEMENTS (public, active only)
+// ===========================================
+// Admin manages the full CRUD at /admin/announcements - this is the read-only
+// feed the 3 frontend domains actually render. Short cache since these are
+// more time-sensitive than /theme (an admin publishing an urgent announcement
+// shouldn't have to wait a full minute to see it live).
+router.get('/announcements', asyncHandler(async (req, res) => {
+  const now = new Date();
+  const announcements = await prisma.announcement.findMany({
+    where: {
+      isActive: true,
+      startsAt: { lte: now },
+      OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+    },
+    select: {
+      id: true,
+      title: true,
+      content: true,
+      type: true,
+      targetAudience: true,
+      startsAt: true,
+    },
+    orderBy: { startsAt: 'desc' },
+  });
+
+  res.set('Cache-Control', 'public, max-age=30');
+  res.json({ announcements });
 }));
 
 // ===========================================

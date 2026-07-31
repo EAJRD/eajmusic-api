@@ -7,7 +7,7 @@ import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
 import fs from 'fs';
 import path from 'path';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from './lib/prisma.js';
 import { getObjectStream } from './services/minioStorageService.js';
 
 // Import routes
@@ -32,7 +32,6 @@ import { csrfProtection } from './middleware/csrf.js';
 
 // Initialize
 const app = express();
-const prisma = new PrismaClient();
 const PORT = process.env.PORT || 5001;
 
 // Behind Cloudflare Tunnel / Nginx in every deployment target - without this,

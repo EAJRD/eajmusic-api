@@ -31,11 +31,12 @@ export const ROLE_PERMISSIONS = {
     'tickets:*',
     'announcements:manage',
     'finance:read',
+    'finance:write',
     'audit:read',
   ],
   SUPPORT: ['tickets:*'],
   REVIEWER: ['releases:read', 'releases:approve', 'releases:reject'],
-  FINANCE: ['payouts:process', 'payouts:read', 'finance:read'],
+  FINANCE: ['payouts:process', 'payouts:read', 'finance:read', 'finance:write'],
   ARTIST: [],
   LABEL: [],
 };

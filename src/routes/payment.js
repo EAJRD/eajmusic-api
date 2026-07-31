@@ -1,11 +1,10 @@
 import { Router } from 'express';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
 import athMovilService from '../services/athMovilService.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // ===========================================
 // ATH MÓVIL PAYMENT INITIATION

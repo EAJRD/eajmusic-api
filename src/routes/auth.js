@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
 import { validate, registerSchema, loginSchema, updateProfileSchema, changePasswordSchema } from '../validators/auth.js';
 import { setAuthCookies, clearAuthCookies, REFRESH_COOKIE } from '../utils/cookies.js';
+import { getOrCreateDefaultLabelId } from '../services/labelService.js';
+import { sendEmail, passwordResetEmailHtml, verificationEmailHtml } from '../services/emailService.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
 // Generate tokens. Access tokens are short-lived by design (they live in a
 // cookie sent on every request); refresh tokens are long-lived and only
@@ -52,6 +53,11 @@ router.post('/register', validate(registerSchema), asyncHandler(async (req, res)
 
   // Create user with transaction
   const user = await prisma.$transaction(async (tx) => {
+    // Every ARTIST defaults to the platform's own "EAJMUSIC" label until
+    // they upgrade off FREE and move to a real one (PATCH /artist/label).
+    // LABEL accounts don't get a managing label - they are one.
+    const defaultLabelId = accountType === 'ARTIST' ? await getOrCreateDefaultLabelId(tx) : null;
+
     // Create user
     const newUser = await tx.user.create({
       data: {
@@ -61,6 +67,7 @@ router.post('/register', validate(registerSchema), asyncHandler(async (req, res)
         role: accountType,
         status: 'ACTIVE', // In production, set to PENDING and verify email
         avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`,
+        ...(defaultLabelId && { labelId: defaultLabelId }),
       },
     });
 
@@ -93,6 +100,30 @@ router.post('/register', validate(registerSchema), asyncHandler(async (req, res)
     }
 
     return newUser;
+  });
+
+  // Email verification - stateless JWT like the password-reset flow above,
+  // no schema/DB storage needed. Sending is best-effort (sendEmail never
+  // throws) and does NOT block registration or login: SMTP isn't configured
+  // in production yet, so gating access on this would lock every new signup
+  // out until that's set up. `user.emailVerified` just stays false and the
+  // frontend can prompt to verify/resend without blocking the product.
+  const verificationToken = jwt.sign(
+    { userId: user.id, type: 'email_verification' },
+    process.env.JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+  const verifyBaseUrl = req.get('origin') || process.env.FRONTEND_URL || 'http://localhost:3000';
+  const verifyUrl = `${verifyBaseUrl}/verify-email?token=${verificationToken}`;
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`\n[EMAIL VERIFICATION] Token for ${user.email}: ${verifyUrl}\n`);
+  }
+
+  await sendEmail({
+    to: user.email,
+    subject: 'Verify Your Email - EAJMUSIC',
+    html: verificationEmailHtml({ name: user.name, verifyUrl }),
   });
 
   // Generate tokens
@@ -538,41 +569,11 @@ router.post('/forgot-password', asyncHandler(async (req, res) => {
     console.log(`\n[PASSWORD RESET] Token for ${email}: ${resetUrl}\n`);
   }
 
-  // TODO: Send email via SMTP when configured
-  // Use nodemailer with SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS env vars
-  if (process.env.SMTP_HOST) {
-    try {
-      const nodemailer = await import('nodemailer');
-      const transporter = nodemailer.default.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT) || 587,
-        secure: process.env.SMTP_SECURE === 'true',
-        auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
-        },
-      });
-
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM || '"EAJMUSIC" <noreply@eajmusic.com>',
-        to: email,
-        subject: 'Reset Your Password - EAJMUSIC',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #7c3aed;">Reset Your Password</h2>
-            <p>Hi ${user.name},</p>
-            <p>We received a request to reset your password. Click the button below to create a new one:</p>
-            <a href="${resetUrl}" style="display: inline-block; background: #7c3aed; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 16px 0;">Reset Password</a>
-            <p style="color: #666; font-size: 14px;">This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>
-            <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
-            <p style="color: #999; font-size: 12px;">EAJMUSIC - Music Distribution Platform</p>
-          </div>
-        `,
-      });
-    } catch (emailError) {
-      console.error('[EMAIL ERROR]', emailError.message);
-    }
-  }
+  await sendEmail({
+    to: email,
+    subject: 'Reset Your Password - EAJMUSIC',
+    html: passwordResetEmailHtml({ name: user.name, resetUrl }),
+  });
 
   // Audit log
   await prisma.auditLog.create({
@@ -638,6 +639,66 @@ router.post('/reset-password', asyncHandler(async (req, res) => {
   } catch (error) {
     return res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired reset token' });
   }
+}));
+
+// ===========================================
+// VERIFY EMAIL
+// ===========================================
+router.post('/verify-email', asyncHandler(async (req, res) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return res.status(400).json({ error: 'Bad Request', message: 'Token is required' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.type !== 'email_verification') {
+      throw new Error('Invalid token type');
+    }
+
+    const user = await prisma.user.update({
+      where: { id: decoded.userId },
+      data: { emailVerified: true, emailVerifiedAt: new Date() },
+      select: { id: true, email: true, emailVerified: true },
+    });
+
+    res.json({ success: true, message: 'Email verified successfully.', user });
+  } catch (error) {
+    return res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired verification link' });
+  }
+}));
+
+// Authenticated - lets a user who lost/never got the original email trigger
+// a fresh one. Same stateless-JWT approach as registration, so this is safe
+// to call as many times as needed (each token is independently valid for
+// 24h, none of them get invalidated by requesting another).
+router.post('/resend-verification', authenticate, asyncHandler(async (req, res) => {
+  const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+  if (user.emailVerified) {
+    return res.json({ success: true, message: 'Email is already verified.' });
+  }
+
+  const verificationToken = jwt.sign(
+    { userId: user.id, type: 'email_verification' },
+    process.env.JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+  const verifyBaseUrl = req.get('origin') || process.env.FRONTEND_URL || 'http://localhost:3000';
+  const verifyUrl = `${verifyBaseUrl}/verify-email?token=${verificationToken}`;
+
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`\n[EMAIL VERIFICATION] Token for ${user.email}: ${verifyUrl}\n`);
+  }
+
+  await sendEmail({
+    to: user.email,
+    subject: 'Verify Your Email - EAJMUSIC',
+    html: verificationEmailHtml({ name: user.name, verifyUrl }),
+  });
+
+  res.json({ success: true, message: 'Verification email sent.' });
 }));
 
 export default router;

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole, requirePermission } from '../middleware/rbac.js';
@@ -16,18 +16,21 @@ import {
 import { moderateTestimonialSchema } from '../validators/testimonial.js';
 
 const router = Router();
-const prisma = new PrismaClient();
 
-// All routes require authentication and at least ADMIN/SUPER_ADMIN; several
-// routes below layer a finer requirePermission()/requireRole('SUPER_ADMIN')
-// check on top of this baseline.
+// All routes require authentication and at least one admin-panel role.
+// Every route below layers a finer requirePermission()/requireRole(...)
+// check on top of this baseline - this outer gate only keeps
+// ARTIST/LABEL out, it does NOT imply full access for SUPPORT/REVIEWER/
+// FINANCE. Each route must have its own explicit guard matching
+// ROLE_PERMISSIONS (src/middleware/rbac.js), otherwise it defaults to
+// "any of these 5 roles" which is almost never what's intended.
 router.use(authenticate);
-router.use(requireRole('ADMIN', 'SUPER_ADMIN'));
+router.use(requireRole('ADMIN', 'SUPER_ADMIN', 'SUPPORT', 'REVIEWER', 'FINANCE'));
 
 // ===========================================
 // DASHBOARD STATS
 // ===========================================
-router.get('/stats', asyncHandler(async (req, res) => {
+router.get('/stats', requireRole('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req, res) => {
   const [
     totalUsers,
     activeReleases,
@@ -177,7 +180,7 @@ router.post('/users', requireRole('SUPER_ADMIN'), validate(createEmployeeSchema)
   });
 }));
 
-router.get('/users/:id', asyncHandler(async (req, res) => {
+router.get('/users/:id', requirePermission('users:read'), asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.params.id },
     select: {
@@ -286,7 +289,7 @@ router.patch('/users/:id/role', requireRole('SUPER_ADMIN'), validate(updateUserR
 // ===========================================
 // RELEASES MANAGEMENT
 // ===========================================
-router.get('/releases', asyncHandler(async (req, res) => {
+router.get('/releases', requirePermission('releases:read'), asyncHandler(async (req, res) => {
   const { status, search, page = 1, limit = 20 } = req.query;
 
   const where = {
@@ -331,7 +334,7 @@ router.get('/releases', asyncHandler(async (req, res) => {
   });
 }));
 
-router.get('/releases/pending', asyncHandler(async (req, res) => {
+router.get('/releases/pending', requirePermission('releases:read'), asyncHandler(async (req, res) => {
   const releases = await prisma.release.findMany({
     where: { status: 'PENDING' },
     include: {
@@ -351,7 +354,7 @@ router.get('/releases/pending', asyncHandler(async (req, res) => {
   res.json({ releases });
 }));
 
-router.get('/releases/:id', asyncHandler(async (req, res) => {
+router.get('/releases/:id', requirePermission('releases:read'), asyncHandler(async (req, res) => {
   const release = await prisma.release.findUnique({
     where: { id: req.params.id },
     include: {
@@ -377,7 +380,7 @@ router.get('/releases/:id', asyncHandler(async (req, res) => {
   res.json({ release });
 }));
 
-router.post('/releases/:id/review', validate(adminReviewSchema), asyncHandler(async (req, res) => {
+router.post('/releases/:id/review', requirePermission('releases:approve'), validate(adminReviewSchema), asyncHandler(async (req, res) => {
   const { action, reason } = req.body;
 
   const release = await prisma.release.findUnique({
@@ -431,7 +434,7 @@ router.post('/releases/:id/review', validate(adminReviewSchema), asyncHandler(as
 // ===========================================
 // TAKEDOWNS
 // ===========================================
-router.get('/takedowns', asyncHandler(async (req, res) => {
+router.get('/takedowns', requireRole('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req, res) => {
   const takedowns = await prisma.takedownRequest.findMany({
     include: {
       release: {
@@ -446,7 +449,7 @@ router.get('/takedowns', asyncHandler(async (req, res) => {
   res.json({ takedowns });
 }));
 
-router.post('/takedowns/:id/resolve', asyncHandler(async (req, res) => {
+router.post('/takedowns/:id/resolve', requireRole('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req, res) => {
   const { action, resolution } = req.body;
 
   const takedown = await prisma.takedownRequest.findUnique({
@@ -488,7 +491,7 @@ router.post('/takedowns/:id/resolve', asyncHandler(async (req, res) => {
 // ===========================================
 // PAYOUTS
 // ===========================================
-router.get('/payouts', asyncHandler(async (req, res) => {
+router.get('/payouts', requirePermission('payouts:read'), asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query;
 
   const where = status ? { status } : {};
@@ -519,7 +522,7 @@ router.get('/payouts', asyncHandler(async (req, res) => {
   });
 }));
 
-router.post('/payouts/:id/process', asyncHandler(async (req, res) => {
+router.post('/payouts/:id/process', requirePermission('payouts:process'), asyncHandler(async (req, res) => {
   const { action, transactionId, failureReason } = req.body;
 
   const payout = await prisma.payout.findUnique({
@@ -579,7 +582,7 @@ router.post('/payouts/:id/process', asyncHandler(async (req, res) => {
 // ===========================================
 // BULK PAYOUT IMPORT (CSV)
 // ===========================================
-router.post('/payouts/bulk-complete', asyncHandler(async (req, res) => {
+router.post('/payouts/bulk-complete', requirePermission('payouts:process'), asyncHandler(async (req, res) => {
   const { payouts } = req.body;
 
   if (!payouts || !Array.isArray(payouts) || payouts.length === 0) {
@@ -779,7 +782,7 @@ router.post('/payouts/bulk-complete', asyncHandler(async (req, res) => {
 // ===========================================
 // ANNOUNCEMENTS
 // ===========================================
-router.get('/announcements', asyncHandler(async (req, res) => {
+router.get('/announcements', requirePermission('announcements:manage'), asyncHandler(async (req, res) => {
   const announcements = await prisma.announcement.findMany({
     include: {
       author: {
@@ -792,7 +795,7 @@ router.get('/announcements', asyncHandler(async (req, res) => {
   res.json({ announcements });
 }));
 
-router.post('/announcements', asyncHandler(async (req, res) => {
+router.post('/announcements', requirePermission('announcements:manage'), asyncHandler(async (req, res) => {
   const { title, content, type, targetAudience, startsAt, expiresAt } = req.body;
 
   const announcement = await prisma.announcement.create({
@@ -814,7 +817,7 @@ router.post('/announcements', asyncHandler(async (req, res) => {
   });
 }));
 
-router.patch('/announcements/:id', asyncHandler(async (req, res) => {
+router.patch('/announcements/:id', requirePermission('announcements:manage'), asyncHandler(async (req, res) => {
   const { title, content, type, targetAudience, isActive, startsAt, expiresAt } = req.body;
 
   const announcement = await prisma.announcement.update({
@@ -837,7 +840,7 @@ router.patch('/announcements/:id', asyncHandler(async (req, res) => {
   });
 }));
 
-router.delete('/announcements/:id', asyncHandler(async (req, res) => {
+router.delete('/announcements/:id', requirePermission('announcements:manage'), asyncHandler(async (req, res) => {
   await prisma.announcement.delete({
     where: { id: req.params.id },
   });
@@ -851,7 +854,51 @@ router.delete('/announcements/:id', asyncHandler(async (req, res) => {
 // ===========================================
 // SUPPORT TICKETS
 // ===========================================
-router.get('/tickets', asyncHandler(async (req, res) => {
+
+// Staff-initiated ticket - lets a support agent reach out to an artist/label
+// first, instead of only ever replying to tickets the user opened themselves
+// (see POST /artist/tickets in support.js for that direction).
+router.post('/tickets', requirePermission('tickets:reply'), asyncHandler(async (req, res) => {
+  const { userId, subject, category, priority, message } = req.body;
+
+  if (!userId || !subject || !message) {
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: 'userId, subject and message are required',
+    });
+  }
+
+  const targetUser = await prisma.user.findUnique({ where: { id: userId } });
+  if (!targetUser) {
+    return res.status(404).json({ error: 'Not Found', message: 'User not found' });
+  }
+
+  const ticket = await prisma.supportTicket.create({
+    data: {
+      userId,
+      subject,
+      category: category || 'General',
+      priority: priority || 'normal',
+      status: 'OPEN',
+      assignedTo: req.user.id,
+      messages: {
+        create: {
+          userId: req.user.id,
+          message,
+        },
+      },
+    },
+    include: {
+      user: { select: { id: true, name: true, email: true, avatarUrl: true } },
+      assignee: { select: { id: true, name: true } },
+      messages: true,
+    },
+  });
+
+  res.status(201).json({ success: true, ticket });
+}));
+
+router.get('/tickets', requirePermission('tickets:read'), asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query;
 
   const where = status ? { status } : {};
@@ -889,7 +936,7 @@ router.get('/tickets', asyncHandler(async (req, res) => {
   });
 }));
 
-router.get('/tickets/:id', asyncHandler(async (req, res) => {
+router.get('/tickets/:id', requirePermission('tickets:read'), asyncHandler(async (req, res) => {
   const ticket = await prisma.supportTicket.findUnique({
     where: { id: req.params.id },
     include: {
@@ -920,7 +967,7 @@ router.get('/tickets/:id', asyncHandler(async (req, res) => {
   res.json({ ticket });
 }));
 
-router.post('/tickets/:id/reply', asyncHandler(async (req, res) => {
+router.post('/tickets/:id/reply', requirePermission('tickets:reply'), asyncHandler(async (req, res) => {
   const { message, isInternal } = req.body;
 
   const ticket = await prisma.supportTicket.findUnique({
@@ -957,7 +1004,7 @@ router.post('/tickets/:id/reply', asyncHandler(async (req, res) => {
   });
 }));
 
-router.patch('/tickets/:id/status', asyncHandler(async (req, res) => {
+router.patch('/tickets/:id/status', requirePermission('tickets:status'), asyncHandler(async (req, res) => {
   const { status } = req.body;
 
   if (!['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].includes(status)) {
@@ -982,10 +1029,41 @@ router.patch('/tickets/:id/status', asyncHandler(async (req, res) => {
   });
 }));
 
+// Manually assign a ticket to a staff member (SUPPORT/ADMIN/SUPER_ADMIN).
+// Pass assigneeId: null to unassign. Complements the auto-assign-on-first-
+// reply behavior in POST /tickets/:id/reply above - that covers the common
+// case of "whoever replies first owns it", this covers a lead manually
+// routing a ticket to a specific teammate.
+router.patch('/tickets/:id/assign', requirePermission('tickets:assign'), asyncHandler(async (req, res) => {
+  const { assigneeId } = req.body;
+
+  if (assigneeId) {
+    const assignee = await prisma.user.findUnique({ where: { id: assigneeId } });
+    if (!assignee || !['SUPPORT', 'ADMIN', 'SUPER_ADMIN'].includes(assignee.role)) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: 'assigneeId must belong to a SUPPORT, ADMIN or SUPER_ADMIN user',
+      });
+    }
+  }
+
+  const ticket = await prisma.supportTicket.update({
+    where: { id: req.params.id },
+    data: { assignedTo: assigneeId || null },
+    include: { assignee: { select: { id: true, name: true } } },
+  });
+
+  res.json({
+    success: true,
+    message: assigneeId ? 'Ticket assigned' : 'Ticket unassigned',
+    ticket,
+  });
+}));
+
 // ===========================================
 // AUDIT LOGS
 // ===========================================
-router.get('/audit-logs', asyncHandler(async (req, res) => {
+router.get('/audit-logs', requirePermission('audit:read'), asyncHandler(async (req, res) => {
   const { action, userId, entityType, page = 1, limit = 50 } = req.query;
 
   const where = {
@@ -1021,7 +1099,7 @@ router.get('/audit-logs', asyncHandler(async (req, res) => {
 // ===========================================
 // FINANCE OVERVIEW
 // ===========================================
-router.get('/finance/overview', asyncHandler(async (req, res) => {
+router.get('/finance/overview', requirePermission('finance:read'), asyncHandler(async (req, res) => {
   const [totalRevenue, totalCommissions, totalPayouts, pendingPayouts, completedPayouts, monthlyRevenue] = await Promise.all([
     prisma.royalty.aggregate({ _sum: { grossRevenue: true } }),
     prisma.royalty.aggregate({ _sum: { commissionAmount: true } }),
@@ -1052,10 +1130,75 @@ router.get('/finance/overview', asyncHandler(async (req, res) => {
   });
 }));
 
+// Look up a specific artist's wallet - used by the Finance Hub's "Manage
+// Artist Balance" panel to show current figures before an adjustment.
+router.get('/users/:id/wallet', requirePermission('finance:read'), asyncHandler(async (req, res) => {
+  const wallet = await prisma.wallet.findUnique({ where: { userId: req.params.id } });
+  if (!wallet) {
+    return res.status(404).json({ error: 'Not Found', message: 'This user has no wallet yet' });
+  }
+  res.json({ wallet });
+}));
+
+// Manually adjust a user's available/pending balance (e.g. correcting an
+// error, granting a goodwill credit). Every field is optional so the caller
+// can adjust just one of the two. No new ledger/transaction model was added
+// for this - the before/after values are captured on the AuditLog entry,
+// which is enough for a manual, infrequent admin action; a real per-entry
+// transaction history would be schema work for a later pass.
+router.patch('/users/:id/wallet', requirePermission('finance:write'), asyncHandler(async (req, res) => {
+  const { availableBalance, pendingBalance, reason } = req.body;
+
+  if (availableBalance === undefined && pendingBalance === undefined) {
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: 'Provide availableBalance and/or pendingBalance to update',
+    });
+  }
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ error: 'Bad Request', message: 'A reason is required for balance adjustments' });
+  }
+
+  const existing = await prisma.wallet.findUnique({ where: { userId: req.params.id } });
+  if (!existing) {
+    return res.status(404).json({ error: 'Not Found', message: 'This user has no wallet yet' });
+  }
+
+  const wallet = await prisma.wallet.update({
+    where: { userId: req.params.id },
+    data: {
+      ...(availableBalance !== undefined && { availableBalance }),
+      ...(pendingBalance !== undefined && { pendingBalance }),
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'WALLET_BALANCE_ADJUSTED',
+      entityType: 'Wallet',
+      entityId: wallet.id,
+      oldValues: {
+        availableBalance: existing.availableBalance,
+        pendingBalance: existing.pendingBalance,
+      },
+      newValues: {
+        availableBalance: wallet.availableBalance,
+        pendingBalance: wallet.pendingBalance,
+        reason: reason.trim(),
+        targetUserId: req.params.id,
+      },
+      ipAddress: req.ip,
+    },
+  });
+
+  res.json({ success: true, wallet });
+}));
+
 // ===========================================
 // CHANGE USER PLAN
 // ===========================================
-router.patch('/users/:id/plan', asyncHandler(async (req, res) => {
+router.patch('/users/:id/plan', requirePermission('users:write'), asyncHandler(async (req, res) => {
   const { plan } = req.body;
 
   const validPlans = ['FREE', 'PRO', 'LABEL_PLUS', 'ENTERPRISE'];

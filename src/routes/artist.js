@@ -6,6 +6,13 @@ import { requireRole } from '../middleware/rbac.js';
 import { validate } from '../validators/auth.js';
 import { createReleaseSchema, updateReleaseSchema, submitReleaseSchema } from '../validators/release.js';
 import { notifyN8n } from '../services/n8nWebhookService.js';
+import { computeTicketPriority } from '../utils/ticketPriority.js';
+import { detectContributorMatches } from '../services/contributorMatchService.js';
+import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
+import { sendEmail, labelInvitationEmailHtml } from '../services/emailService.js';
+import { getOrCreateDefaultLabelId } from '../services/labelService.js';
 
 const router = Router();
 
@@ -19,6 +26,90 @@ const router = Router();
 // logic here to open up to REVIEWER.
 router.use(authenticate);
 router.use(requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUPER_ADMIN'));
+
+// ===========================================
+// ONBOARDING (Grupo 1.1)
+// ===========================================
+// Required before distribution (POST /releases, POST /releases/:id/submit
+// below both call requireOnboarded). Shown once, right after signup.
+function requireOnboarded(req, res, next) {
+  if (!req.user.emailVerified) {
+    return res.status(403).json({
+      error: 'Forbidden',
+      message: 'Debes verificar tu correo electrónico antes de distribuir música.',
+      code: 'EMAIL_NOT_VERIFIED',
+    });
+  }
+  if (!req.user.onboardingCompletedAt) {
+    return res.status(403).json({
+      error: 'Forbidden',
+      message: 'Completa tu registro inicial (Onboarding) antes de distribuir música.',
+      code: 'ONBOARDING_INCOMPLETE',
+    });
+  }
+  next();
+}
+
+router.post('/onboarding', asyncHandler(async (req, res) => {
+  const { artistName, dateOfBirth, idDocumentUrl, idDocumentKey, plan } = req.body;
+
+  if (!artistName || !String(artistName).trim()) {
+    return res.status(400).json({ error: 'Bad Request', message: 'El nombre artístico es obligatorio.' });
+  }
+  const dob = new Date(dateOfBirth);
+  if (!dateOfBirth || Number.isNaN(dob.getTime())) {
+    return res.status(400).json({ error: 'Bad Request', message: 'La fecha de nacimiento es obligatoria.' });
+  }
+  const age = (Date.now() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000);
+  if (age < 13) {
+    return res.status(400).json({ error: 'Bad Request', message: 'Debes tener al menos 13 años para distribuir música.' });
+  }
+  if (!idDocumentUrl) {
+    return res.status(400).json({ error: 'Bad Request', message: 'Sube un documento de identificación oficial.' });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: req.user.id },
+      data: {
+        dateOfBirth: dob,
+        idDocumentUrl,
+        idDocumentKey,
+        onboardingCompletedAt: new Date(),
+      },
+    });
+
+    // Name the artist's default profile after the artistic name given here
+    // (created blank-ish at registration with the account holder's real
+    // name - see auth.js).
+    const profile = await tx.artistProfile.findFirst({ where: { userId: req.user.id } });
+    if (profile) {
+      await tx.artistProfile.update({ where: { id: profile.id }, data: { name: artistName.trim() } });
+    }
+
+    await detectContributorMatches(tx, req.user.id, artistName.trim());
+  });
+
+  // Plan selection: FREE needs nothing further (it's already the default
+  // from registration). Anything else opens the same tracked upgrade
+  // request used by Settings > Plan, since there's no live billing
+  // integration to actually flip the tier here.
+  if (plan && plan !== 'FREE' && ['PRO', 'LABEL_PLUS', 'ENTERPRISE'].includes(plan)) {
+    const subscription = await prisma.subscription.findUnique({ where: { userId: req.user.id } });
+    const message = `Solicitud de upgrade de plan durante onboarding: de ${subscription?.plan || 'FREE'} a ${plan}.`;
+    await prisma.supportTicket.create({
+      data: {
+        userId: req.user.id,
+        subject: `Upgrade de plan a ${plan} (onboarding)`,
+        category: 'Plan Upgrade',
+        priority: computeTicketPriority('Plan Upgrade', message),
+        messages: { create: { userId: req.user.id, message } },
+      },
+    });
+  }
+
+  res.json({ success: true, message: 'Onboarding completado' });
+}));
 
 // ===========================================
 // STATS & DASHBOARD
@@ -172,7 +263,7 @@ router.get('/releases/:id', asyncHandler(async (req, res) => {
 }));
 
 // Create new release
-router.post('/releases', validate(createReleaseSchema), asyncHandler(async (req, res) => {
+router.post('/releases', requireOnboarded, validate(createReleaseSchema), asyncHandler(async (req, res) => {
   const {
     title, version, releaseType, genre, subgenre, language,
     releaseDate, originalReleaseDate, upc, catalogNumber,
@@ -198,6 +289,19 @@ router.post('/releases', validate(createReleaseSchema), asyncHandler(async (req,
   const subscription = await prisma.subscription.findUnique({
     where: { userId: req.user.id },
   });
+
+  // Plan-aware release date lead time: FREE needs 45 days, everyone else 21.
+  const minLeadDays = (subscription?.plan || 'FREE') === 'FREE' ? 45 : 21;
+  const minReleaseDate = new Date();
+  minReleaseDate.setDate(minReleaseDate.getDate() + minLeadDays);
+  if (new Date(releaseDate) < minReleaseDate) {
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: (subscription?.plan || 'FREE') === 'FREE'
+        ? `Las cuentas Free necesitan al menos ${minLeadDays} días de anticipación para el lanzamiento. Sube de plan para reducirlo a 21 días.`
+        : `La fecha de lanzamiento debe ser al menos ${minLeadDays} días a partir de hoy.`,
+    });
+  }
 
   // Create release with tracks
   const release = await prisma.release.create({
@@ -303,6 +407,21 @@ router.patch('/releases/:id', validate(updateReleaseSchema), asyncHandler(async 
     tracks, status,
   } = req.body;
 
+  if (releaseDate) {
+    const subscription = await prisma.subscription.findUnique({ where: { userId: req.user.id } });
+    const minLeadDays = (subscription?.plan || 'FREE') === 'FREE' ? 45 : 21;
+    const minReleaseDate = new Date();
+    minReleaseDate.setDate(minReleaseDate.getDate() + minLeadDays);
+    if (new Date(releaseDate) < minReleaseDate) {
+      return res.status(400).json({
+        error: 'Bad Request',
+        message: (subscription?.plan || 'FREE') === 'FREE'
+          ? `Las cuentas Free necesitan al menos ${minLeadDays} días de anticipación para el lanzamiento. Sube de plan para reducirlo a 21 días.`
+          : `La fecha de lanzamiento debe ser al menos ${minLeadDays} días a partir de hoy.`,
+      });
+    }
+  }
+
   const updatedRelease = await prisma.release.update({
     where: { id: req.params.id },
     data: {
@@ -337,7 +456,7 @@ router.patch('/releases/:id', validate(updateReleaseSchema), asyncHandler(async 
 }));
 
 // Submit release for review
-router.post('/releases/:id/submit', validate(submitReleaseSchema), asyncHandler(async (req, res) => {
+router.post('/releases/:id/submit', requireOnboarded, validate(submitReleaseSchema), asyncHandler(async (req, res) => {
   const release = await prisma.release.findFirst({
     where: {
       id: req.params.id,
@@ -487,6 +606,8 @@ router.post('/profiles', asyncHandler(async (req, res) => {
       avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`,
     },
   });
+
+  await detectContributorMatches(prisma, req.user.id, name);
 
   // Matches frontend's `api.post<{id, name}>('/artist/profiles', ...)` contract.
   res.status(201).json(profile);
@@ -813,14 +934,17 @@ router.get('/tickets', asyncHandler(async (req, res) => {
 }));
 
 router.post('/tickets', asyncHandler(async (req, res) => {
-  const { subject, category, priority, message } = req.body;
+  // priority is never taken from the client - it's computed from category +
+  // message content (see computeTicketPriority) so users can't self-escalate
+  // and staff triage queues stay meaningful.
+  const { subject, category, message } = req.body;
 
   const ticket = await prisma.supportTicket.create({
     data: {
       userId: req.user.id,
       subject,
       category,
-      ...(priority && { priority: priority.toLowerCase() }),
+      priority: computeTicketPriority(category, message),
       messages: {
         create: {
           userId: req.user.id,
@@ -948,6 +1072,162 @@ router.patch('/label', asyncHandler(async (req, res) => {
   });
 
   res.json({ success: true, labelId: updated.labelId });
+}));
+
+// ===========================================
+// PLAN UPGRADE
+// ===========================================
+
+// No real billing integration here yet - this opens a tracked support
+// ticket (visible to FINANCE/ADMIN in the existing Support Tickets queue)
+// so a human follows up, rather than pretending to process a payment.
+router.post('/plan/upgrade-request', asyncHandler(async (req, res) => {
+  const { targetPlan } = req.body;
+  if (!targetPlan || !['PRO', 'LABEL_PLUS', 'ENTERPRISE'].includes(targetPlan)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'targetPlan debe ser PRO, LABEL_PLUS o ENTERPRISE.' });
+  }
+
+  const subscription = await prisma.subscription.findUnique({ where: { userId: req.user.id } });
+  const message = `Solicitud de upgrade de plan: de ${subscription?.plan || 'FREE'} a ${targetPlan}.`;
+
+  const ticket = await prisma.supportTicket.create({
+    data: {
+      userId: req.user.id,
+      subject: `Upgrade de plan a ${targetPlan}`,
+      category: 'Plan Upgrade',
+      priority: computeTicketPriority('Plan Upgrade', message),
+      messages: { create: { userId: req.user.id, message } },
+    },
+    include: { messages: true },
+  });
+
+  res.status(201).json({ success: true, ticket });
+
+  notifyN8n('plan-upgrade-requested', {
+    userId: req.user.id,
+    currentPlan: subscription?.plan || 'FREE',
+    targetPlan,
+    ticketId: ticket.id,
+  });
+}));
+
+// Grupo 4.2b: labels can create a brand-new artist account under their own
+// management, without that artist having registered themselves first.
+router.post('/label/artists', asyncHandler(async (req, res) => {
+  if (req.user.role !== 'LABEL') {
+    return res.status(403).json({ error: 'Forbidden', message: 'Solo las cuentas de Sello pueden crear artistas.' });
+  }
+  const ownedLabel = await prisma.label.findFirst({ where: { userId: req.user.id } });
+  if (!ownedLabel) {
+    return res.status(400).json({ error: 'Bad Request', message: 'No se encontró un Sello asociado a tu cuenta.' });
+  }
+
+  const { email, name } = req.body;
+  if (!email || !name) {
+    return res.status(400).json({ error: 'Bad Request', message: 'Nombre y correo electrónico son obligatorios.' });
+  }
+
+  const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  if (existing) {
+    return res.status(409).json({ error: 'Conflict', message: 'Ya existe una cuenta con ese correo.' });
+  }
+
+  // Unusable random password - the artist sets their own via the invite
+  // link below (same set-password flow as POST /auth/reset-password).
+  const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), parseInt(process.env.BCRYPT_ROUNDS) || 12);
+
+  const newArtist = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: {
+        email: email.toLowerCase(),
+        passwordHash,
+        name,
+        role: 'ARTIST',
+        status: 'ACTIVE',
+        labelId: ownedLabel.id,
+        avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`,
+      },
+    });
+    await tx.subscription.create({ data: { userId: user.id, plan: 'FREE', commissionRate: 15, maxArtistProfiles: 1 } });
+    await tx.wallet.create({ data: { userId: user.id } });
+    await tx.artistProfile.create({
+      data: { userId: user.id, name, avatarUrl: user.avatarUrl },
+    });
+    return user;
+  });
+
+  const inviteToken = jwt.sign({ userId: newArtist.id, type: 'password_reset' }, process.env.JWT_SECRET, { expiresIn: '24h' });
+  const baseUrl = req.get('origin') || process.env.FRONTEND_URL || 'http://localhost:3000';
+  await sendEmail({
+    to: newArtist.email,
+    subject: `${ownedLabel.name} te agregó a EAJMUSIC`,
+    html: labelInvitationEmailHtml({ name, labelName: ownedLabel.name, setPasswordUrl: `${baseUrl}/reset-password?token=${inviteToken}` }),
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'LABEL_ARTIST_CREATED',
+      entityType: 'User',
+      entityId: newArtist.id,
+      newValues: { email: newArtist.email, name, labelId: ownedLabel.id },
+      ipAddress: req.ip,
+    },
+  });
+
+  res.status(201).json({ success: true, artist: { id: newArtist.id, name: newArtist.name, email: newArtist.email } });
+}));
+
+// Claim an existing artist that's still on the platform default label -
+// deliberately does NOT allow poaching an artist already managed by a
+// different real label.
+router.post('/label/artists/claim', asyncHandler(async (req, res) => {
+  if (req.user.role !== 'LABEL') {
+    return res.status(403).json({ error: 'Forbidden', message: 'Solo las cuentas de Sello pueden reclamar artistas.' });
+  }
+  const ownedLabel = await prisma.label.findFirst({ where: { userId: req.user.id } });
+  if (!ownedLabel) {
+    return res.status(400).json({ error: 'Bad Request', message: 'No se encontró un Sello asociado a tu cuenta.' });
+  }
+
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: 'Bad Request', message: 'El correo del artista es obligatorio.' });
+  }
+
+  const target = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
+  if (!target || target.role !== 'ARTIST') {
+    return res.status(404).json({ error: 'Not Found', message: 'No se encontró un artista con ese correo.' });
+  }
+
+  const defaultLabelId = await getOrCreateDefaultLabelId(prisma);
+  if (target.labelId !== defaultLabelId) {
+    return res.status(403).json({
+      error: 'Forbidden',
+      message: target.labelId === ownedLabel.id
+        ? 'Este artista ya está en tu Sello.'
+        : 'Este artista ya es gestionado por otro Sello.',
+    });
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: target.id },
+    data: { labelId: ownedLabel.id },
+    select: { id: true, name: true, email: true, avatarUrl: true },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'LABEL_ARTIST_CLAIMED',
+      entityType: 'User',
+      entityId: target.id,
+      newValues: { labelId: ownedLabel.id },
+      ipAddress: req.ip,
+    },
+  });
+
+  res.json({ success: true, artist: updated });
 }));
 
 export default router;

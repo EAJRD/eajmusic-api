@@ -57,6 +57,8 @@ export const authenticate = async (req, res, next) => {
         status: true,
         avatarUrl: true,
         permissions: true,
+        emailVerified: true,
+        onboardingCompletedAt: true,
         subscription: {
           select: {
             plan: true,

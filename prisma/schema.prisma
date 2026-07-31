@@ -79,11 +79,18 @@ enum ContributorRole {
   PRIMARY_ARTIST
   FEATURED
   PRODUCER
+  CO_PRODUCER
   SONGWRITER
   COMPOSER
   LYRICIST
   MIXER
   MASTERING
+}
+
+enum MatchRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum TestimonialStatus {
@@ -97,54 +104,62 @@ enum TestimonialStatus {
 // ===========================================
 
 model User {
-  id               String     @id @default(uuid())
-  email            String     @unique
-  passwordHash     String     @map("password_hash")
-  name             String
-  role             UserRole   @default(ARTIST)
-  status           UserStatus @default(PENDING)
-  avatarUrl        String?    @map("avatar_url")
-  phone            String?
-  countryCode      String?    @map("country_code") @db.Char(2)
-  timezone         String     @default("UTC")
-  emailVerified    Boolean    @default(false) @map("email_verified")
-  emailVerifiedAt  DateTime?  @map("email_verified_at")
-  twoFactorEnabled Boolean    @default(false) @map("two_factor_enabled")
-  twoFactorSecret  String?    @map("two_factor_secret")
-  lastLoginAt      DateTime?  @map("last_login_at")
-  lastLoginIp      String?    @map("last_login_ip")
+  id                    String     @id @default(uuid())
+  email                 String     @unique
+  passwordHash          String     @map("password_hash")
+  name                  String
+  role                  UserRole   @default(ARTIST)
+  status                UserStatus @default(PENDING)
+  avatarUrl             String?    @map("avatar_url")
+  phone                 String?
+  countryCode           String?    @map("country_code") @db.Char(2)
+  timezone              String     @default("UTC")
+  emailVerified         Boolean    @default(false) @map("email_verified")
+  emailVerifiedAt       DateTime?  @map("email_verified_at")
+  twoFactorEnabled      Boolean    @default(false) @map("two_factor_enabled")
+  twoFactorSecret       String?    @map("two_factor_secret")
+  lastLoginAt           DateTime?  @map("last_login_at")
+  lastLoginIp           String?    @map("last_login_ip")
   // Fine-grained permission overrides beyond what `role` implies, e.g.
   // ["releases:approve", "payouts:process"]. Lets Super Admin compose new
   // employee capabilities (Support/Reviewer/Finance and beyond) without a
   // schema migration for every new permission.
-  permissions      Json?
+  permissions           Json?
   // Which Label manages this artist account (distinct from `labels` below,
   // which is the Label(s) a LABEL-role user themselves operates). Every
   // ARTIST defaults to the platform's own "EAJMUSIC" Label row (seeded, see
   // prisma/seed.js) until they're moved to a real label - FREE-plan artists
   // are blocked from changing this at the API layer (PATCH /artist/label).
-  labelId          String?    @map("label_id")
-  createdAt        DateTime   @default(now()) @map("created_at")
-  updatedAt        DateTime   @updatedAt @map("updated_at")
+  labelId               String?    @map("label_id")
+  // Onboarding (required before first release can be distributed, see
+  // POST /artist/onboarding). idDocument* is a KYC upload, same storage
+  // chain as avatar/cover (MinIO -> Drive -> local).
+  dateOfBirth           DateTime?  @map("date_of_birth") @db.Date
+  idDocumentUrl         String?    @map("id_document_url")
+  idDocumentKey         String?    @map("id_document_key")
+  onboardingCompletedAt DateTime?  @map("onboarding_completed_at")
+  createdAt             DateTime   @default(now()) @map("created_at")
+  updatedAt             DateTime   @updatedAt @map("updated_at")
 
   // Relations
-  artistProfiles       ArtistProfile[]
-  labels               Label[]
-  managedByLabel       Label?                 @relation("LabelManagedArtists", fields: [labelId], references: [id])
-  subscription         Subscription?
-  releases             Release[]
-  wallet               Wallet?
-  payouts              Payout[]
-  royalties            Royalty[]
-  supportTickets       SupportTicket[]        @relation("TicketCreator")
-  assignedTickets      SupportTicket[]        @relation("TicketAssignee")
-  ticketMessages       SupportTicketMessage[]
-  sessions             Session[]
-  auditLogs            AuditLog[]
-  announcements        Announcement[]
-  takedownsResolved    TakedownRequest[]      @relation("TakedownResolver")
-  paymentTransactions  PaymentTransaction[]
-  testimonialsReviewed Testimonial[]          @relation("TestimonialReviewer")
+  artistProfiles           ArtistProfile[]
+  labels                   Label[]
+  managedByLabel           Label?                    @relation("LabelManagedArtists", fields: [labelId], references: [id])
+  subscription             Subscription?
+  releases                 Release[]
+  wallet                   Wallet?
+  payouts                  Payout[]
+  royalties                Royalty[]
+  supportTickets           SupportTicket[]           @relation("TicketCreator")
+  assignedTickets          SupportTicket[]           @relation("TicketAssignee")
+  ticketMessages           SupportTicketMessage[]
+  sessions                 Session[]
+  auditLogs                AuditLog[]
+  announcements            Announcement[]
+  takedownsResolved        TakedownRequest[]         @relation("TakedownResolver")
+  paymentTransactions      PaymentTransaction[]
+  testimonialsReviewed     Testimonial[]             @relation("TestimonialReviewer")
+  contributorMatchRequests ContributorMatchRequest[]
 
   @@map("users")
 }
@@ -338,6 +353,28 @@ model TrackContributor {
   artistProfile ArtistProfile? @relation(fields: [artistProfileId], references: [id])
 
   @@map("track_contributors")
+}
+
+// Created when a newly-registered ArtistProfile.name exactly matches one or
+// more orphaned TrackContributor.name rows (contributors with no
+// artistProfileId - credited by name only, before the person had an
+// account). Super Admin approves with one click; approval links
+// artistProfileId on every matching TrackContributor row, surfacing that
+// prior catalog/history on the now-claimed profile.
+model ContributorMatchRequest {
+  id              String             @id @default(uuid())
+  contributorName String             @map("contributor_name")
+  matchedUserId   String             @map("matched_user_id")
+  trackIds        String[]           @map("track_ids")
+  status          MatchRequestStatus @default(PENDING)
+  createdAt       DateTime           @default(now()) @map("created_at")
+  resolvedAt      DateTime?          @map("resolved_at")
+  resolvedBy      String?            @map("resolved_by")
+
+  // Relations
+  matchedUser User @relation(fields: [matchedUserId], references: [id], onDelete: Cascade)
+
+  @@map("contributor_match_requests")
 }
 
 model DSP {

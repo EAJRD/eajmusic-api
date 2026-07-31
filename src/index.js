@@ -113,6 +113,7 @@ const UPLOAD_MIME_TYPES = {
   '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.flac': 'audio/flac',
   '.m4a': 'audio/mp4', '.mp4': 'audio/mp4',
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+  '.pdf': 'application/pdf',
 };
 
 async function serveUpload(req, res) {

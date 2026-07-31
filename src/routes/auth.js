@@ -342,6 +342,7 @@ router.get('/me', authenticate, asyncHandler(async (req, res) => {
       countryCode: true,
       timezone: true,
       emailVerified: true,
+      onboardingCompletedAt: true,
       createdAt: true,
       subscription: {
         select: {

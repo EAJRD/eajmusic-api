@@ -28,6 +28,7 @@ export const ROLE_PERMISSIONS = {
     'settings:read',
     'settings:write',
     'testimonials:moderate',
+    'contributors:approve',
     'tickets:*',
     'announcements:manage',
     'finance:read',

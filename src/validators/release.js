@@ -6,6 +6,7 @@ const contributorSchema = z.object({
     'PRIMARY_ARTIST',
     'FEATURED',
     'PRODUCER',
+    'CO_PRODUCER',
     'SONGWRITER',
     'COMPOSER',
     'LYRICIST',
@@ -15,6 +16,41 @@ const contributorSchema = z.object({
   royaltyPercentage: z.number().min(0).max(100).default(0),
   ipiNumber: z.string().max(20).optional().nullable(),
 });
+
+// Grupo 4.1: exactly one PRIMARY_ARTIST, at most one PRODUCER (additional
+// producers must be CO_PRODUCER), and splits summing to exactly 100% -
+// enforced here so it can't be bypassed by skipping the frontend's own copy
+// of this check (NewRelease.tsx's validateRightsStep).
+function checkContributorRules(contributors, ctx) {
+  if (contributors.length === 0) return;
+
+  const primaryCount = contributors.filter((c) => c.role === 'PRIMARY_ARTIST').length;
+  if (primaryCount !== 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Each track needs exactly one PRIMARY_ARTIST (found ${primaryCount}). Additional main artists must be FEATURED.`,
+      path: ['contributors'],
+    });
+  }
+
+  const producerCount = contributors.filter((c) => c.role === 'PRODUCER').length;
+  if (producerCount > 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Only one PRODUCER is allowed per track (found ${producerCount}). Additional producers must be CO_PRODUCER.`,
+      path: ['contributors'],
+    });
+  }
+
+  const total = contributors.reduce((sum, c) => sum + (c.royaltyPercentage || 0), 0);
+  if (Math.round(total * 100) / 100 !== 100) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Contributor royalty splits must sum to exactly 100% (got ${total}%).`,
+      path: ['contributors'],
+    });
+  }
+}
 
 const trackSchema = z.object({
   title: z.string().min(1, 'Track title is required').max(500),
@@ -27,7 +63,7 @@ const trackSchema = z.object({
   lyricsLanguage: z.string().length(2).optional().nullable(),
   audioKey: z.string().optional().nullable(), // S3 key or local path
   contributors: z.array(contributorSchema).optional().default([]),
-});
+}).superRefine((track, ctx) => checkContributorRules(track.contributors, ctx));
 
 export const createReleaseSchema = z.object({
   // Basic info
@@ -38,13 +74,11 @@ export const createReleaseSchema = z.object({
   subgenre: z.string().max(100).optional().nullable(),
   language: z.string().length(2).default('EN'),
 
-  // Dates
-  releaseDate: z.string().refine((date) => {
-    const releaseDate = new Date(date);
-    const minDate = new Date();
-    minDate.setDate(minDate.getDate() + 14); // Minimum 14 days from now
-    return releaseDate >= minDate;
-  }, 'Release date must be at least 14 days in the future'),
+  // Dates - the actual minimum lead time depends on the caller's plan
+  // (FREE: 45 days, PRO+: 21 days) and is enforced in the route handler
+  // (POST /artist/releases), which has access to req.user's subscription.
+  // This just checks it parses to a real date.
+  releaseDate: z.string().refine((date) => !Number.isNaN(new Date(date).getTime()), 'Invalid release date'),
   originalReleaseDate: z.string().optional().nullable(),
 
   // Identifiers
@@ -88,7 +122,7 @@ export const submitReleaseSchema = z.object({
 export const trackContributorsSchema = z.object({
   trackId: z.string().uuid(),
   contributors: z.array(contributorSchema).min(1, 'At least one contributor is required'),
-});
+}).superRefine((data, ctx) => checkContributorRules(data.contributors, ctx));
 
 export const adminReviewSchema = z.object({
   action: z.enum(['APPROVE', 'REJECT']),

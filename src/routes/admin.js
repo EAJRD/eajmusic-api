@@ -1343,4 +1343,73 @@ router.patch('/testimonials/:id', requirePermission('testimonials:moderate'), va
   });
 }));
 
+// ===========================================
+// CONTRIBUTOR MATCH REQUESTS (Grupo 4.2)
+// ===========================================
+// Surfaced when a newly-registered ArtistProfile name matches contributor
+// credits that predate any account (see contributorMatchService.js). A
+// human always approves before catalog gets reassigned.
+router.get('/contributor-matches', requirePermission('contributors:approve'), asyncHandler(async (req, res) => {
+  const { status = 'PENDING' } = req.query;
+  const matches = await prisma.contributorMatchRequest.findMany({
+    where: { status },
+    include: { matchedUser: { select: { id: true, name: true, email: true, avatarUrl: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json({ matches });
+}));
+
+router.patch('/contributor-matches/:id', requirePermission('contributors:approve'), asyncHandler(async (req, res) => {
+  const { action } = req.body; // 'APPROVE' | 'REJECT'
+  if (!['APPROVE', 'REJECT'].includes(action)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'action debe ser APPROVE o REJECT.' });
+  }
+
+  const match = await prisma.contributorMatchRequest.findUnique({ where: { id: req.params.id } });
+  if (!match) {
+    return res.status(404).json({ error: 'Not Found', message: 'Match request not found' });
+  }
+  if (match.status !== 'PENDING') {
+    return res.status(400).json({ error: 'Bad Request', message: 'This match request was already resolved.' });
+  }
+
+  if (action === 'APPROVE') {
+    const profile = await prisma.artistProfile.findFirst({
+      where: { userId: match.matchedUserId, name: { equals: match.contributorName, mode: 'insensitive' } },
+    });
+    if (!profile) {
+      return res.status(400).json({ error: 'Bad Request', message: 'The matched user no longer has a profile with this name.' });
+    }
+
+    await prisma.$transaction([
+      prisma.trackContributor.updateMany({
+        where: { artistProfileId: null, name: { equals: match.contributorName, mode: 'insensitive' } },
+        data: { artistProfileId: profile.id },
+      }),
+      prisma.contributorMatchRequest.update({
+        where: { id: match.id },
+        data: { status: 'APPROVED', resolvedAt: new Date(), resolvedBy: req.user.id },
+      }),
+    ]);
+  } else {
+    await prisma.contributorMatchRequest.update({
+      where: { id: match.id },
+      data: { status: 'REJECTED', resolvedAt: new Date(), resolvedBy: req.user.id },
+    });
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: `CONTRIBUTOR_MATCH_${action}D`,
+      entityType: 'ContributorMatchRequest',
+      entityId: match.id,
+      newValues: { contributorName: match.contributorName, matchedUserId: match.matchedUserId },
+      ipAddress: req.ip,
+    },
+  });
+
+  res.json({ success: true, message: `Match ${action === 'APPROVE' ? 'aprobado' : 'rechazado'}` });
+}));
+
 export default router;

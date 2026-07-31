@@ -77,6 +77,15 @@ export function passwordResetEmailHtml({ name, resetUrl }) {
   `);
 }
 
+export function labelInvitationEmailHtml({ name, labelName, setPasswordUrl }) {
+  return BRAND_WRAPPER('You\'ve been added to a Label', `
+    <p>Hi ${name},</p>
+    <p><strong>${labelName}</strong> created an artist account for you on EAJMUSIC. Set your password to get started:</p>
+    <a href="${setPasswordUrl}" style="display: inline-block; background: #7c3aed; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 16px 0;">Set Password</a>
+    <p style="color: #666; font-size: 14px;">This link expires in 24 hours. If you weren't expecting this, you can safely ignore this email.</p>
+  `);
+}
+
 export function verificationEmailHtml({ name, verifyUrl }) {
   return BRAND_WRAPPER('Verify Your Email', `
     <p>Hi ${name},</p>

@@ -9,6 +9,8 @@ import { authenticate } from '../middleware/auth.js';
 import { requireRole } from '../middleware/rbac.js';
 import { uploadToDriveAndCleanupLocal } from '../services/n8nFileService.js';
 import { uploadAndCleanupLocal as uploadToMinioAndCleanupLocal } from '../services/minioStorageService.js';
+import { validateAudioFile } from '../utils/audioValidation.js';
+import { validateCoverArt } from '../utils/imageValidation.js';
 
 const router = Router();
 
@@ -44,8 +46,9 @@ async function storeUploadedFile(localPath, fileKey, mimetype, originalFilename)
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
 const audioDir = path.join(uploadDir, 'audio');
 const imagesDir = path.join(uploadDir, 'images');
+const documentsDir = path.join(uploadDir, 'documents');
 
-[uploadDir, audioDir, imagesDir].forEach(dir => {
+[uploadDir, audioDir, imagesDir, documentsDir].forEach(dir => {
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -75,18 +78,18 @@ const storage = multer.diskStorage({
 // as a cheap defense-in-depth measure against mimetype spoofing (the
 // Content-Type on a multipart part is client-supplied and not trustworthy on
 // its own).
+// Only lossless formats accepted at all - MP3/M4A are rejected at the
+// extension/mimetype filter here (cheap, before the file even lands on
+// disk); WAV/FLAC still go through validateAudioFile() below for the real
+// bit-depth/sample-rate inspection, since the extension alone doesn't prove
+// those specs.
 const ALLOWED_AUDIO_MIME_TYPES = [
   'audio/wav',
   'audio/x-wav',
   'audio/flac',
   'audio/x-flac',
-  'audio/mpeg',
-  'audio/mp3',
-  'audio/mp4',
-  'audio/m4a',
-  'audio/x-m4a',
 ];
-const ALLOWED_AUDIO_EXTENSIONS = ['.wav', '.flac', '.mp3', '.mp4', '.m4a'];
+const ALLOWED_AUDIO_EXTENSIONS = ['.wav', '.flac'];
 
 const ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png'];
 const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png'];
@@ -97,12 +100,12 @@ function makeFileFilter(allowedMimeTypes, allowedExtensions, label) {
     if (allowedMimeTypes.includes(file.mimetype) && allowedExtensions.includes(ext)) {
       cb(null, true);
     } else {
-      cb(new Error(`Invalid file type. Only ${label} files are allowed.`), false);
+      cb(new Error(`Tipo de archivo no válido. Solo se aceptan archivos de ${label}.`), false);
     }
   };
 }
 
-const audioFileFilter = makeFileFilter(ALLOWED_AUDIO_MIME_TYPES, ALLOWED_AUDIO_EXTENSIONS, 'audio (WAV, FLAC, MP3, M4A)');
+const audioFileFilter = makeFileFilter(ALLOWED_AUDIO_MIME_TYPES, ALLOWED_AUDIO_EXTENSIONS, 'audio sin pérdida (WAV o FLAC)');
 const imageFileFilter = makeFileFilter(ALLOWED_IMAGE_MIME_TYPES, ALLOWED_IMAGE_EXTENSIONS, 'image (JPG, PNG)');
 
 // Multer instances
@@ -122,6 +125,20 @@ const uploadImage = multer({
   },
 });
 
+// KYC identity document (Onboarding, Grupo 1.1). Own storage/filter since
+// it accepts PDF in addition to JPG/PNG, unlike the image filter above.
+const documentStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, documentsDir),
+  filename: (req, file, cb) => cb(null, `${uuidv4()}${path.extname(file.originalname).toLowerCase()}`),
+});
+const ALLOWED_DOCUMENT_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+const ALLOWED_DOCUMENT_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf'];
+const uploadDocument = multer({
+  storage: documentStorage,
+  fileFilter: makeFileFilter(ALLOWED_DOCUMENT_MIME_TYPES, ALLOWED_DOCUMENT_EXTENSIONS, 'identificación (JPG, PNG o PDF)'),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
+
 // ===========================================
 // ROUTES
 // ===========================================
@@ -132,6 +149,19 @@ router.post('/audio', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUP
     return res.status(400).json({
       error: 'Bad Request',
       message: 'No audio file provided',
+    });
+  }
+
+  // Real technical inspection (bit depth, sample rate, lossless container) -
+  // the extension/mimetype filter above only proves the file CLAIMS to be
+  // WAV/FLAC. Rejected outright with a clear message; never transcoded
+  // server-side (see audioValidation.js).
+  const audioCheck = await validateAudioFile(req.file.path, req.file.originalname);
+  if (!audioCheck.valid) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: audioCheck.message,
     });
   }
 
@@ -167,6 +197,9 @@ router.post('/audio', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUP
           audioKey: fileKey,
           audioUrl: fileUrl,
           audioFormat: path.extname(req.file.originalname).slice(1).toUpperCase(),
+          audioBitrate: audioCheck.meta.bitrateKbps,
+          audioSampleRate: audioCheck.meta.sampleRate,
+          durationMs: audioCheck.meta.durationMs,
           status: 'READY',
         },
       });
@@ -190,13 +223,10 @@ router.post('/audio', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUP
 
   // Matches frontend's `api.upload<{url, key, durationMs}>('/upload/audio', ...)`
   // contract - fields flattened to the top level (no `file` wrapper).
-  // `durationMs` is not computed server-side (no audio-probing library is a
-  // dependency here) - left null; the track's real durationMs is populated
-  // once processing/transcoding fills it in.
   res.status(201).json({
     url: fileUrl,
     key: fileKey,
-    durationMs: null,
+    durationMs: audioCheck.meta.durationMs,
     success: true,
     message: 'Audio file uploaded successfully',
     filename: req.file.filename,
@@ -216,6 +246,17 @@ router.post('/audio/batch', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN'
   }
 
   const baseUrl = getBaseUrl(req);
+
+  // Validate every file BEFORE storing any of them - a batch upload where
+  // track 3 of 8 fails specs shouldn't leave 1-2 already moved to MinIO/Drive
+  // while the caller thinks the whole batch failed.
+  for (const file of req.files) {
+    const check = await validateAudioFile(file.path, file.originalname);
+    if (!check.valid) {
+      await Promise.all(req.files.map((f) => new Promise((resolve) => fs.unlink(f.path, () => resolve()))));
+      return res.status(400).json({ error: 'Bad Request', message: check.message });
+    }
+  }
 
   // Sequential (not Promise.all) so a slow/failed Drive upload for one file
   // can't race with another file's `unlink` of a similarly-named temp path,
@@ -252,6 +293,18 @@ router.post('/cover', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUP
     return res.status(400).json({
       error: 'Bad Request',
       message: 'No image file provided',
+    });
+  }
+
+  // Real dimension/aspect-ratio check - cover art specifically (avatars
+  // below go through uploadImage too but aren't held to the DSP 1:1/3000px
+  // artwork spec).
+  const coverCheck = validateCoverArt(req.file.path, req.file.originalname);
+  if (!coverCheck.valid) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: coverCheck.message,
     });
   }
 
@@ -330,6 +383,37 @@ router.post('/avatar', authenticate, uploadImage.single('file'), asyncHandler(as
     key: fileKey,
     success: true,
     message: 'Avatar uploaded successfully',
+  });
+}));
+
+// Upload KYC identity document (Onboarding, Grupo 1.1)
+router.post('/id-document', authenticate, uploadDocument.single('file'), asyncHandler(async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: 'No se recibió ningún archivo.',
+    });
+  }
+
+  let fileKey = `documents/${req.file.filename}`;
+  let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
+
+  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname);
+  if (override) {
+    fileUrl = override.url;
+    fileKey = override.key;
+  }
+
+  await prisma.user.update({
+    where: { id: req.user.id },
+    data: { idDocumentUrl: fileUrl, idDocumentKey: fileKey },
+  });
+
+  res.status(201).json({
+    url: fileUrl,
+    key: fileKey,
+    success: true,
+    message: 'Documento de identidad subido correctamente',
   });
 }));
 
@@ -428,7 +512,7 @@ router.use((err, req, res, next) => {
     });
   }
 
-  if (err.message.includes('Invalid file type')) {
+  if (err.message.includes('Tipo de archivo no válido')) {
     return res.status(400).json({
       error: 'Bad Request',
       message: err.message,

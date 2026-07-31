@@ -16,6 +16,10 @@ const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const EXEMPT_EXACT_PATHS = new Set([
   '/api/auth/login',
   '/api/auth/register',
+  // Same reasoning as login/register: this is InsForge's replacement for
+  // both (see src/routes/auth.js), also called before any CSRF cookie
+  // exists.
+  '/api/auth/sync-insforge-user',
   // Called by ATH Móvil's own servers (see src/routes/payment.js), not by a
   // browser - there's no session cookie for it to forge in the first place,
   // so double-submit CSRF doesn't apply. Authenticity for this endpoint is

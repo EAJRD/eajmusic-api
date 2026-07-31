@@ -138,6 +138,12 @@ model User {
   idDocumentUrl         String?    @map("id_document_url")
   idDocumentKey         String?    @map("id_document_key")
   onboardingCompletedAt DateTime?  @map("onboarding_completed_at")
+  // Bridge to InsForge auth (auth.users.id on the separate InsForge-managed
+  // Postgres instance - not a real FK, InsForge owns the actual credential
+  // store; this DB stays the source of truth for role/business data). Set
+  // by POST /auth/sync-insforge-user on first login/signup after a user
+  // authenticates through InsForge. Null means "not migrated yet".
+  insforgeUserId        String?    @unique @map("insforge_user_id")
   createdAt             DateTime   @default(now()) @map("created_at")
   updatedAt             DateTime   @updatedAt @map("updated_at")
 

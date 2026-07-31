@@ -1,13 +1,17 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
+import { verifyInsforgeToken } from '../middleware/insforgeAuth.js';
 import { validate, registerSchema, loginSchema, updateProfileSchema, changePasswordSchema } from '../validators/auth.js';
 import { setAuthCookies, clearAuthCookies, REFRESH_COOKIE } from '../utils/cookies.js';
 import { getOrCreateDefaultLabelId } from '../services/labelService.js';
 import { sendEmail, passwordResetEmailHtml, verificationEmailHtml } from '../services/emailService.js';
+
+const SUBSCRIPTION_SELECT = { plan: true, commissionRate: true, isActive: true, expiresAt: true };
 
 const router = Router();
 
@@ -172,6 +176,142 @@ router.post('/register', validate(registerSchema), asyncHandler(async (req, res)
       name: user.name,
       role: user.role,
       avatarUrl: user.avatarUrl,
+    },
+    accessToken,
+    refreshToken,
+  });
+}));
+
+// ===========================================
+// SYNC INSFORGE USER
+// ===========================================
+// InsForge (https://insforge.dev) is now the credential front door - signup,
+// login, OAuth, email verification, and password reset all happen there via
+// @insforge/sdk on the frontend (see AGENTS.md). This API never sees a
+// password again for InsForge-backed accounts; it stays the source of truth
+// for role/subscription/business data. The frontend calls this immediately
+// after any InsForge auth event that yields a fresh accessToken (signUp,
+// signInWithPassword, verifyEmail, OAuth code exchange) to exchange that
+// token for this API's own session cookies - everything downstream
+// (RBAC, `authenticate` middleware, etc.) is completely unchanged.
+router.post('/sync-insforge-user', asyncHandler(async (req, res) => {
+  const authHeader = req.headers.authorization;
+  const insforgeToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!insforgeToken) {
+    return res.status(401).json({ error: 'Unauthorized', message: 'Missing InsForge access token' });
+  }
+
+  let decoded;
+  try {
+    decoded = await verifyInsforgeToken(insforgeToken);
+  } catch {
+    return res.status(401).json({ error: 'Unauthorized', message: 'Invalid or expired InsForge token' });
+  }
+
+  const insforgeUserId = decoded.sub;
+  const email = decoded.email?.toLowerCase();
+  if (!insforgeUserId || !email) {
+    return res.status(400).json({ error: 'Bad Request', message: 'InsForge token is missing sub/email' });
+  }
+
+  // name/accountType are only meaningful the first time a brand-new signup
+  // provisions its business-data row; ignored on every later sync.
+  const { name, accountType } = req.body;
+
+  let user = await prisma.user.findUnique({
+    where: { insforgeUserId },
+    include: { subscription: { select: SUBSCRIPTION_SELECT } },
+  });
+
+  if (!user) {
+    // Not linked yet. Either this is an existing (pre-InsForge) account
+    // being linked by email on first sync (the migration case), or a
+    // genuinely brand-new signup.
+    const existingByEmail = await prisma.user.findUnique({ where: { email } });
+
+    if (existingByEmail) {
+      user = await prisma.user.update({
+        where: { id: existingByEmail.id },
+        data: { insforgeUserId, emailVerified: true },
+        include: { subscription: { select: SUBSCRIPTION_SELECT } },
+      });
+    } else {
+      const role = accountType === 'LABEL' ? 'LABEL' : 'ARTIST';
+      const displayName = name || email.split('@')[0];
+      // Unusable placeholder - InsForge owns the real credential now, this
+      // column just can't be null (schema still shared with pre-InsForge
+      // rows). Real bcrypt hash so nothing downstream has to special-case it.
+      const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), parseInt(process.env.BCRYPT_ROUNDS) || 12);
+
+      const createdId = await prisma.$transaction(async (tx) => {
+        const defaultLabelId = role === 'ARTIST' ? await getOrCreateDefaultLabelId(tx) : null;
+        const created = await tx.user.create({
+          data: {
+            email,
+            passwordHash,
+            name: displayName,
+            role,
+            status: 'ACTIVE',
+            emailVerified: true,
+            insforgeUserId,
+            avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random&color=fff`,
+            ...(defaultLabelId && { labelId: defaultLabelId }),
+          },
+        });
+        await tx.subscription.create({ data: { userId: created.id, plan: 'FREE', commissionRate: 15, maxArtistProfiles: 1 } });
+        await tx.wallet.create({ data: { userId: created.id } });
+        if (role === 'ARTIST') {
+          await tx.artistProfile.create({ data: { userId: created.id, name: created.name, avatarUrl: created.avatarUrl } });
+        }
+        return created.id;
+      });
+
+      user = await prisma.user.findUnique({
+        where: { id: createdId },
+        include: { subscription: { select: SUBSCRIPTION_SELECT } },
+      });
+    }
+  }
+
+  if (user.status === 'SUSPENDED') {
+    return res.status(403).json({ error: 'Forbidden', message: 'Your account has been suspended. Please contact support.' });
+  }
+  if (user.status === 'DELETED') {
+    return res.status(401).json({ error: 'Unauthorized', message: 'This account has been deleted.' });
+  }
+
+  const { accessToken, refreshToken } = generateTokens(user.id, true);
+
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + 30);
+  await prisma.session.create({
+    data: {
+      userId: user.id,
+      tokenHash: jwt.sign({ t: Date.now() }, process.env.JWT_SECRET),
+      refreshToken,
+      expiresAt,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    },
+  });
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date(), lastLoginIp: req.ip },
+  });
+
+  setAuthCookies(res, { accessToken, refreshToken });
+
+  res.json({
+    success: true,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      status: user.status,
+      avatarUrl: user.avatarUrl,
+      subscription: user.subscription,
     },
     accessToken,
     refreshToken,

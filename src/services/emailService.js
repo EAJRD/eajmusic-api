@@ -36,18 +36,29 @@ async function getTransporter() {
   }
 }
 
+// Which alias sends what - all four are real mailboxes on the domain
+// (Hostinger), authenticated via the single SMTP_USER account. Callers pass
+// the one that matches what the email is actually about; sendEmail's own
+// default (no-reply) only kicks in if a caller forgets to specify one.
+export const EMAIL_FROM = {
+  support: '"EAJMUSIC Support" <support@eajmusic.com>',
+  labelSupport: '"EAJMUSIC" <label-support@eajmusic.com>',
+  info: '"EAJMUSIC" <info@eajmusic.com>',
+  noReply: '"EAJMUSIC" <no-reply@eajmusic.com>',
+};
+
 /**
  * Sends an HTML email. Returns true on success, false on any failure (SMTP
  * not configured, send error) - never throws, so a delivery failure can
  * never break the request that triggered it.
  */
-export async function sendEmail({ to, subject, html }) {
+export async function sendEmail({ to, subject, html, from }) {
   const t = await getTransporter();
   if (!t) return false;
 
   try {
     await t.sendMail({
-      from: process.env.SMTP_FROM || '"EAJMUSIC" <noreply@eajmusic.com>',
+      from: from || process.env.SMTP_FROM || EMAIL_FROM.noReply,
       to,
       subject,
       html,

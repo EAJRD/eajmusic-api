@@ -14,7 +14,7 @@ import {
   updateSettingSchema,
 } from '../validators/admin.js';
 import { moderateTestimonialSchema } from '../validators/testimonial.js';
-import { sendEmail, employeeInvitationEmailHtml } from '../services/emailService.js';
+import { sendEmail, employeeInvitationEmailHtml, EMAIL_FROM } from '../services/emailService.js';
 
 const router = Router();
 
@@ -185,6 +185,7 @@ router.post('/users', requireRole('SUPER_ADMIN'), validate(createEmployeeSchema)
   const registerUrl = `${process.env.FRONTEND_URL || 'https://eajmusic.com'}/register`;
   const invitationSent = await sendEmail({
     to: user.email,
+    from: EMAIL_FROM.support,
     subject: 'You\'ve been added to the EAJMUSIC team',
     html: employeeInvitationEmailHtml({ name, role, email: user.email, registerUrl }),
   });

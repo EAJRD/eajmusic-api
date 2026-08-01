@@ -10,7 +10,7 @@ import { notifyN8n } from '../services/n8nWebhookService.js';
 import { computeTicketPriority } from '../utils/ticketPriority.js';
 import { detectContributorMatches } from '../services/contributorMatchService.js';
 import crypto from 'crypto';
-import { sendEmail, labelInvitationEmailHtml } from '../services/emailService.js';
+import { sendEmail, labelInvitationEmailHtml, EMAIL_FROM } from '../services/emailService.js';
 import { getOrCreateDefaultLabelId } from '../services/labelService.js';
 
 const router = Router();
@@ -1299,6 +1299,7 @@ router.post('/label/artists/invite', requireOwnedLabel(), labelArtistActionLimit
   const baseUrl = req.get('origin') || process.env.FRONTEND_URL || 'http://localhost:3000';
   await sendEmail({
     to: email,
+    from: EMAIL_FROM.labelSupport,
     subject: `${req.ownedLabel.name} te invitó a EAJMUSIC`,
     html: labelInvitationEmailHtml({ name, labelName: req.ownedLabel.name, email, acceptUrl: `${baseUrl}/accept-invite?token=${rawToken}` }),
   });

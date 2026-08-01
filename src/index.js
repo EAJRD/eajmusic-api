@@ -103,6 +103,11 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+// The real login/register path since InsForge became the credential front
+// door (every signIn/signUp/OAuth exchange calls this to mint this API's
+// own session) - the old /login and /register above are effectively dead
+// but kept their rate limit; this one had none.
+app.use('/api/auth/sync-insforge-user', authLimiter);
 
 // Serve uploads: MinIO first (primary storage as of the file-storage
 // migration - see src/services/minioStorageService.js), falling back to
@@ -136,12 +141,23 @@ async function serveUpload(req, res) {
   res.status(404).json({ error: 'Not Found', message: 'File not found' });
 }
 
-if (process.env.NODE_ENV !== 'production') {
-  app.get('/uploads/:type/:filename', serveUpload);
+// `images` (cover art, avatars, testimonial photos) are meant to be public -
+// they're rendered on unauthenticated pages (the /talent directory, public
+// testimonials, DSPs eventually). `audio` (full-quality WAV/FLAC masters)
+// and `documents` (KYC ID uploads) stay behind auth. Gating every type
+// equally in production was a real bug: it hadn't surfaced yet only because
+// no one had uploaded a real avatar/cover/testimonial photo yet (test
+// accounts all still use the ui-avatars.com placeholder) - the moment one
+// did, that image would 401 on every public page that renders it.
+function requireAuthUnlessPublicType(req, res, next) {
+  if (req.params.type === 'images') return next();
+  return authenticate(req, res, next);
 }
 
-if (process.env.NODE_ENV === 'production') {
-  app.get('/uploads/:type/:filename', authenticate, serveUpload);
+if (process.env.NODE_ENV !== 'production') {
+  app.get('/uploads/:type/:filename', serveUpload);
+} else {
+  app.get('/uploads/:type/:filename', requireAuthUnlessPublicType, serveUpload);
 }
 
 // CSRF (double-submit cookie) - must run after cookieParser (reads the

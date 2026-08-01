@@ -103,6 +103,18 @@ const testimonialSubmitLimiter = rateLimit({
   message: { error: 'Too Many Requests', message: 'Too many submissions from this IP, please try again later.' },
 });
 
+// Same exposure as testimonials (anonymous, unauthenticated, free-text) -
+// newsletter/contact only had the generic 100-req/15min-per-IP limiter
+// shared across the entire /api/ surface, which does nothing to stop a
+// script from flooding either table specifically.
+const publicSubmitLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too Many Requests', message: 'Too many submissions from this IP, please try again later.' },
+});
+
 // NOTE: ArtistProfile has no slug/handle field in the current schema (id,
 // name, bio, avatarUrl, ... only) - per the task constraints we're not
 // migrating the schema for this, so `:artistSlug` here is actually the
@@ -174,10 +186,12 @@ router.get('/testimonials', asyncHandler(async (req, res) => {
   });
 }));
 
-router.post('/newsletter', asyncHandler(async (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+router.post('/newsletter', publicSubmitLimiter, asyncHandler(async (req, res) => {
+  const email = req.body.email?.trim().toLowerCase();
+  if (!email || !EMAIL_RE.test(email)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'A valid email is required' });
   }
 
   const subscriber = await prisma.newsletterSubscriber.upsert({
@@ -189,10 +203,15 @@ router.post('/newsletter', asyncHandler(async (req, res) => {
   res.status(201).json({ success: true, subscriber });
 }));
 
-router.post('/contact', asyncHandler(async (req, res) => {
-  const { name, email, message } = req.body;
+router.post('/contact', publicSubmitLimiter, asyncHandler(async (req, res) => {
+  const name = req.body.name?.trim();
+  const email = req.body.email?.trim().toLowerCase();
+  const message = req.body.message?.trim();
   if (!name || !email || !message) {
-    return res.status(400).json({ error: 'Name, email, and message are required' });
+    return res.status(400).json({ error: 'Bad Request', message: 'Name, email, and message are required' });
+  }
+  if (!EMAIL_RE.test(email)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'A valid email is required' });
   }
 
   const contactMessage = await prisma.contactMessage.create({

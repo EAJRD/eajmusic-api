@@ -102,8 +102,8 @@ router.post('/onboarding', asyncHandler(async (req, res) => {
   // request used by Settings > Plan, since there's no live billing
   // integration to actually flip the tier here.
   if (plan && plan !== 'FREE' && ['PRO', 'LABEL_PLUS', 'ENTERPRISE'].includes(plan)) {
-    const subscription = await prisma.subscription.findUnique({ where: { userId: req.user.id } });
-    const message = `Solicitud de upgrade de plan durante onboarding: de ${subscription?.plan || 'FREE'} a ${plan}.`;
+    // req.user.subscription already has this - authenticate() selects it.
+    const message = `Solicitud de upgrade de plan durante onboarding: de ${req.user.subscription?.plan || 'FREE'} a ${plan}.`;
     await prisma.supportTicket.create({
       data: {
         userId: req.user.id,
@@ -292,10 +292,9 @@ router.post('/releases', requireOnboarded, validate(createReleaseSchema), asyncH
     }
   }
 
-  // Check subscription limits
-  const subscription = await prisma.subscription.findUnique({
-    where: { userId: req.user.id },
-  });
+  // req.user.subscription already has this - authenticate() selects it, no
+  // need for a second round-trip to the same row.
+  const subscription = req.user.subscription;
 
   // Plan-aware release date lead time: FREE needs 45 days, everyone else 21.
   const minLeadDays = (subscription?.plan || 'FREE') === 'FREE' ? 45 : 21;
@@ -415,7 +414,7 @@ router.patch('/releases/:id', validate(updateReleaseSchema), asyncHandler(async 
   } = req.body;
 
   if (releaseDate) {
-    const subscription = await prisma.subscription.findUnique({ where: { userId: req.user.id } });
+    const subscription = req.user.subscription;
     const minLeadDays = (subscription?.plan || 'FREE') === 'FREE' ? 45 : 21;
     const minReleaseDate = new Date();
     minReleaseDate.setDate(minReleaseDate.getDate() + minLeadDays);
@@ -588,10 +587,8 @@ router.get('/profiles', asyncHandler(async (req, res) => {
 router.post('/profiles', asyncHandler(async (req, res) => {
   const { name, bio, socialLinks } = req.body;
 
-  // Check subscription limit
-  const subscription = await prisma.subscription.findUnique({
-    where: { userId: req.user.id },
-  });
+  // Check subscription limit - req.user.subscription already has this.
+  const subscription = req.user.subscription;
 
   const profileCount = await prisma.artistProfile.count({
     where: { userId: req.user.id },
@@ -1060,7 +1057,7 @@ router.patch('/label', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Bad Request', message: 'labelId is required' });
   }
 
-  const subscription = await prisma.subscription.findUnique({ where: { userId: req.user.id } });
+  const subscription = req.user.subscription;
   if (subscription?.plan === 'FREE') {
     return res.status(403).json({
       error: 'Forbidden',
@@ -1094,7 +1091,7 @@ router.post('/plan/upgrade-request', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Bad Request', message: 'targetPlan debe ser PRO, LABEL_PLUS o ENTERPRISE.' });
   }
 
-  const subscription = await prisma.subscription.findUnique({ where: { userId: req.user.id } });
+  const subscription = req.user.subscription;
   const message = `Solicitud de upgrade de plan: de ${subscription?.plan || 'FREE'} a ${targetPlan}.`;
 
   const ticket = await prisma.supportTicket.create({

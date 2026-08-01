@@ -595,6 +595,11 @@ model Session {
 
   @@index([tokenHash])
   @@index([expiresAt])
+  // Matches authenticate()'s exact query on every single authenticated
+  // request (findFirst({ where: { userId, expiresAt: { gt: now } } })) - was
+  // missing entirely, meaning that query had no usable index on this table's
+  // busiest column as it grows.
+  @@index([userId, expiresAt])
   @@map("sessions")
 }
 

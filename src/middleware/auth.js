@@ -92,11 +92,20 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    // Update last activity
-    await prisma.session.update({
-      where: { id: session.id },
-      data: { lastActivityAt: new Date() },
-    });
+    // Update last activity - throttled and not awaited. This used to run a
+    // synchronous UPDATE on every single authenticated request (doubling the
+    // DB round-trips for the whole API) for a field nothing in the codebase
+    // ever reads back. Throttling to once per 5 minutes per session keeps it
+    // roughly meaningful if it's ever used for "active sessions" reporting,
+    // without paying for a write on every request; not awaiting it means a
+    // slow/failed write here can never add latency to (or fail) the request.
+    const ACTIVITY_THROTTLE_MS = 5 * 60 * 1000;
+    if (Date.now() - session.lastActivityAt.getTime() > ACTIVITY_THROTTLE_MS) {
+      prisma.session.update({
+        where: { id: session.id },
+        data: { lastActivityAt: new Date() },
+      }).catch(() => {});
+    }
 
     req.user = user;
     req.sessionId = session.id;

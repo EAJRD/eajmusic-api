@@ -10,7 +10,6 @@ import { computeTicketPriority } from '../utils/ticketPriority.js';
 import { detectContributorMatches } from '../services/contributorMatchService.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import jwt from 'jsonwebtoken';
 import { sendEmail, labelInvitationEmailHtml } from '../services/emailService.js';
 import { getOrCreateDefaultLabelId } from '../services/labelService.js';
 
@@ -32,6 +31,14 @@ router.use(requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUPER_ADMIN'));
 // ===========================================
 // Required before distribution (POST /releases, POST /releases/:id/submit
 // below both call requireOnboarded). Shown once, right after signup.
+//
+// The onboarding-wizard check only applies to ARTIST accounts: the wizard
+// itself (Dashboard.tsx's OnboardingWizard) only ever renders for
+// role === 'ARTIST', and its fields (artistic name, date of birth, personal
+// ID document) don't fit a LABEL entity anyway. Gating LABEL/ADMIN/
+// SUPER_ADMIN on onboardingCompletedAt here was a real bug: those accounts
+// have no UI path to ever set it, so they'd be permanently blocked from
+// creating a release. Email verification still applies to everyone.
 function requireOnboarded(req, res, next) {
   if (!req.user.emailVerified) {
     return res.status(403).json({
@@ -40,7 +47,7 @@ function requireOnboarded(req, res, next) {
       code: 'EMAIL_NOT_VERIFIED',
     });
   }
-  if (!req.user.onboardingCompletedAt) {
+  if (req.user.role === 'ARTIST' && !req.user.onboardingCompletedAt) {
     return res.status(403).json({
       error: 'Forbidden',
       message: 'Completa tu registro inicial (Onboarding) antes de distribuir música.',
@@ -1156,12 +1163,18 @@ router.post('/label/artists', asyncHandler(async (req, res) => {
     return user;
   });
 
-  const inviteToken = jwt.sign({ userId: newArtist.id, type: 'password_reset' }, process.env.JWT_SECRET, { expiresIn: '24h' });
+  // No link-with-token flow here: InsForge (the credential front door as of
+  // 2026-07-31, see AGENTS.md) always requires the account holder to choose
+  // their own password via signUp() - there's no way to pre-set one for
+  // them. The artist signs up normally with this same email; POST
+  // /auth/sync-insforge-user links that InsForge identity to this
+  // already-provisioned row by email on first sync, preserving the label
+  // assignment set below.
   const baseUrl = req.get('origin') || process.env.FRONTEND_URL || 'http://localhost:3000';
   await sendEmail({
     to: newArtist.email,
     subject: `${ownedLabel.name} te agregó a EAJMUSIC`,
-    html: labelInvitationEmailHtml({ name, labelName: ownedLabel.name, setPasswordUrl: `${baseUrl}/reset-password?token=${inviteToken}` }),
+    html: labelInvitationEmailHtml({ name, labelName: ownedLabel.name, email: newArtist.email, registerUrl: `${baseUrl}/register` }),
   });
 
   await prisma.auditLog.create({

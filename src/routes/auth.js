@@ -556,8 +556,21 @@ router.post('/change-password', authenticate, validate(changePasswordSchema), as
   // Get user with password
   const user = await prisma.user.findUnique({
     where: { id: req.user.id },
-    select: { passwordHash: true },
+    select: { passwordHash: true, insforgeUserId: true },
   });
+
+  // InsForge-linked accounts have a random, unusable placeholder as
+  // passwordHash (InsForge owns the real credential) - "current password"
+  // is meaningless for them and bcrypt.compare would just always fail with
+  // a misleading "incorrect password" error. Point them at the real place
+  // to change it instead.
+  if (user.insforgeUserId) {
+    return res.status(400).json({
+      error: 'Bad Request',
+      message: 'Tu contraseña se gestiona a través del inicio de sesión (InsForge). Usa "Olvidé mi contraseña" en la pantalla de inicio de sesión para cambiarla.',
+      code: 'PASSWORD_MANAGED_BY_INSFORGE',
+    });
+  }
 
   // Verify current password
   const isValidPassword = await bcrypt.compare(currentPassword, user.passwordHash);

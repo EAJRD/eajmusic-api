@@ -107,6 +107,9 @@ export const createReleaseSchema = z.object({
   // Artist profile
   artistProfileId: z.string().uuid().optional().nullable(),
   labelId: z.string().uuid().optional().nullable(),
+
+  // Client-generated retry key - see POST /artist/releases.
+  idempotencyKey: z.string().max(100).optional().nullable(),
 });
 
 export const updateReleaseSchema = createReleaseSchema.partial().extend({

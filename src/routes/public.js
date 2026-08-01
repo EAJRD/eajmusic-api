@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
@@ -219,6 +220,37 @@ router.post('/contact', publicSubmitLimiter, asyncHandler(async (req, res) => {
   });
 
   res.status(201).json({ success: true, contactMessage });
+}));
+
+// ===========================================
+// LABEL-ARTIST INVITATIONS (public preview, no auth)
+// ===========================================
+// Token space is a random 32-byte hex value (see POST
+// /artist/label/artists/invite) - not brute-forceable in practice, but this
+// is still an unauthenticated lookup endpoint, so it gets its own limiter
+// rather than relying solely on the general /api/ one.
+const invitationLookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too Many Requests', message: 'Too many attempts, please try again later.' },
+});
+
+router.get('/label-invitations/:token', invitationLookupLimiter, asyncHandler(async (req, res) => {
+  const tokenHash = crypto.createHash('sha256').update(req.params.token).digest('hex');
+  const invitation = await prisma.labelArtistInvitation.findUnique({
+    where: { tokenHash },
+    include: { label: { select: { name: true } } },
+  });
+
+  // Same generic 404 whether the token is garbage, already used, or expired
+  // - nothing here should tell an attacker which case it is.
+  if (!invitation || invitation.status !== 'PENDING' || invitation.expiresAt < new Date()) {
+    return res.status(404).json({ error: 'Not Found', message: 'This invitation link is invalid or has expired.' });
+  }
+
+  res.json({ email: invitation.email, name: invitation.name, labelName: invitation.label.name });
 }));
 
 export default router;

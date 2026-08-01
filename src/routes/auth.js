@@ -82,12 +82,15 @@ router.post('/sync-insforge-user', asyncHandler(async (req, res) => {
   // read at all. Still, reject garbage explicitly instead of silently
   // coercing it - a client bug shouldn't be able to shove an unexpected
   // string into the audit trail.
-  const { name, accountType } = req.body;
+  const { name, accountType, invitationToken } = req.body;
   if (accountType !== undefined && !['ARTIST', 'LABEL'].includes(accountType)) {
     return res.status(400).json({ error: 'Bad Request', message: 'accountType must be ARTIST or LABEL' });
   }
   if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0 || name.length > 255)) {
     return res.status(400).json({ error: 'Bad Request', message: 'name must be a non-empty string up to 255 characters' });
+  }
+  if (invitationToken !== undefined && (typeof invitationToken !== 'string' || invitationToken.length === 0 || invitationToken.length > 200)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'invitationToken must be a non-empty string' });
   }
 
   let user = await prisma.user.findUnique({
@@ -110,16 +113,41 @@ router.post('/sync-insforge-user', asyncHandler(async (req, res) => {
         include: { subscription: { select: SUBSCRIPTION_SELECT } },
       });
     } else {
-      auditAction = 'INSFORGE_ACCOUNT_CREATED';
-      const role = accountType === 'LABEL' ? 'LABEL' : 'ARTIST';
-      const displayName = name || email.split('@')[0];
+      // If a label-artist invitation token came along, it takes priority
+      // over accountType/name from the client entirely - role, labelId, and
+      // display name all come from the invitation record a LABEL user
+      // created server-side, never from whatever this signup request claims.
+      let invitation = null;
+      if (invitationToken) {
+        const tokenHash = crypto.createHash('sha256').update(invitationToken).digest('hex');
+        invitation = await prisma.labelArtistInvitation.findUnique({ where: { tokenHash } });
+        if (!invitation || invitation.status !== 'PENDING' || invitation.email !== email) {
+          return res.status(400).json({ error: 'Bad Request', code: 'INVITATION_INVALID', message: 'This invitation link is invalid. Ask the label to resend it.' });
+        }
+        if (invitation.expiresAt < new Date()) {
+          await prisma.labelArtistInvitation.update({ where: { id: invitation.id }, data: { status: 'EXPIRED' } });
+          return res.status(400).json({ error: 'Bad Request', code: 'INVITATION_EXPIRED', message: 'This invitation link has expired. Ask the label to resend it.' });
+        }
+      }
+
+      auditAction = invitation ? 'INSFORGE_ACCOUNT_CREATED_VIA_INVITATION' : 'INSFORGE_ACCOUNT_CREATED';
+      const role = invitation ? 'ARTIST' : (accountType === 'LABEL' ? 'LABEL' : 'ARTIST');
+      const displayName = invitation ? invitation.name : (name || email.split('@')[0]);
       // Unusable placeholder - InsForge owns the real credential now, this
       // column just can't be null (schema still shared with pre-InsForge
       // rows). Real bcrypt hash so nothing downstream has to special-case it.
       const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), parseInt(process.env.BCRYPT_ROUNDS) || 12);
 
       const createdId = await prisma.$transaction(async (tx) => {
-        const defaultLabelId = role === 'ARTIST' ? await getOrCreateDefaultLabelId(tx) : null;
+        // Invitation-driven signups skip the default label entirely - they go
+        // straight to the inviting label. Self-serve LABEL signups get their
+        // own Label row created here (previously missing entirely, which
+        // left every LABEL account without one - see AGENTS.md); self-serve
+        // ARTIST signups get the platform's default label, same as before.
+        const labelId = invitation
+          ? invitation.labelId
+          : (role === 'ARTIST' ? await getOrCreateDefaultLabelId(tx) : null);
+
         const created = await tx.user.create({
           data: {
             email,
@@ -130,13 +158,21 @@ router.post('/sync-insforge-user', asyncHandler(async (req, res) => {
             emailVerified: true,
             insforgeUserId,
             avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=random&color=fff`,
-            ...(defaultLabelId && { labelId: defaultLabelId }),
+            ...(labelId && { labelId }),
           },
         });
         await tx.subscription.create({ data: { userId: created.id, plan: 'FREE', commissionRate: 15, maxArtistProfiles: 1 } });
         await tx.wallet.create({ data: { userId: created.id } });
         if (role === 'ARTIST') {
           await tx.artistProfile.create({ data: { userId: created.id, name: created.name, avatarUrl: created.avatarUrl } });
+        } else {
+          await tx.label.create({ data: { userId: created.id, name: created.name } });
+        }
+        if (invitation) {
+          await tx.labelArtistInvitation.update({
+            where: { id: invitation.id },
+            data: { status: 'ACCEPTED', acceptedAt: new Date(), acceptedUserId: created.id },
+          });
         }
         return created.id;
       });

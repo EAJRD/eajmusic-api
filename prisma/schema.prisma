@@ -166,6 +166,7 @@ model User {
   paymentTransactions      PaymentTransaction[]
   testimonialsReviewed     Testimonial[]             @relation("TestimonialReviewer")
   contributorMatchRequests ContributorMatchRequest[]
+  artistInvitationsSent    LabelArtistInvitation[]   @relation("InvitationSender")
 
   @@map("users")
 }
@@ -205,11 +206,56 @@ model Label {
   createdAt   DateTime @default(now()) @map("created_at")
 
   // Relations
-  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
   releases       Release[]
-  managedArtists User[]    @relation("LabelManagedArtists")
+  managedArtists User[]                  @relation("LabelManagedArtists")
+  invitations    LabelArtistInvitation[]
 
   @@map("labels")
+}
+
+// A label inviting a not-yet-existing artist to join its roster. Deliberately
+// does NOT create a User row up front - InsForge (the auth front door) always
+// requires the account holder to pick their own password via signUp(), so
+// there's nothing meaningful to "activate" until they do. The invitation is
+// the only durable record until then; POST /auth/sync-insforge-user consumes
+// it atomically (by token, single-use) once the invited person actually
+// verifies that email through InsForge, creating the User row at that point
+// already labelId-assigned. See POST /artist/label/artists/invite.
+model LabelArtistInvitation {
+  id             String           @id @default(uuid())
+  email          String
+  name           String
+  labelId        String           @map("label_id")
+  invitedById    String           @map("invited_by_id")
+  // SHA-256 hex of the token embedded in the invite email link - the raw
+  // token is never stored, only ever returned once in the email itself.
+  tokenHash      String           @unique @map("token_hash")
+  status         InvitationStatus @default(PENDING)
+  expiresAt      DateTime         @map("expires_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  acceptedAt     DateTime?        @map("accepted_at")
+  acceptedUserId String?          @map("accepted_user_id")
+
+  // Relations
+  label     Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+  invitedBy User  @relation("InvitationSender", fields: [invitedById], references: [id])
+
+  @@index([email])
+  @@index([labelId])
+  // Natural double-submit guard: while a PENDING invite exists for this
+  // label+email, a second invite attempt collides here instead of creating
+  // a duplicate row. Once accepted/expired/revoked, status changes and a
+  // fresh invite is allowed again.
+  @@unique([labelId, email, status])
+  @@map("label_artist_invitations")
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
 }
 
 model Subscription {
@@ -250,6 +296,11 @@ model Release {
   // Identifiers
   upc           String? @unique @db.VarChar(13)
   catalogNumber String? @map("catalog_number") @db.VarChar(50)
+
+  // Client-generated key for POST /artist/releases: retrying the same submit
+  // attempt (double-click, network blip after a 201 the client never saw)
+  // returns the existing release instead of creating a second DRAFT.
+  idempotencyKey String? @unique @map("idempotency_key") @db.VarChar(100)
 
   // Dates
   releaseDate         DateTime  @map("release_date") @db.Date

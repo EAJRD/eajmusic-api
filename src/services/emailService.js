@@ -78,13 +78,12 @@ export function employeeInvitationEmailHtml({ name, role, email, registerUrl }) 
   `);
 }
 
-export function labelInvitationEmailHtml({ name, labelName, email, registerUrl }) {
-  return BRAND_WRAPPER('You\'ve been added to a Label', `
+export function labelInvitationEmailHtml({ name, labelName, email, acceptUrl }) {
+  return BRAND_WRAPPER('You\'ve been invited to a Label', `
     <p>Hi ${name},</p>
-    <p><strong>${labelName}</strong> created an artist account for you on EAJMUSIC. To activate it, sign up using this exact email address - your account will be automatically linked to the label, with your name and role already set up:</p>
-    <p style="font-weight: bold;">${email}</p>
-    <a href="${registerUrl}" style="display: inline-block; background: #7c3aed; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 16px 0;">Create Your Account</a>
-    <p style="color: #666; font-size: 14px;">Choose your own password when you sign up - there's nothing to reset. If you weren't expecting this, you can safely ignore this email.</p>
+    <p><strong>${labelName}</strong> invited you to join their roster on EAJMUSIC as <strong>${email}</strong>. Accept the invitation to choose your password and activate your account - your name and label are already set up:</p>
+    <a href="${acceptUrl}" style="display: inline-block; background: #7c3aed; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 16px 0;">Accept Invitation</a>
+    <p style="color: #666; font-size: 14px;">This link expires in 7 days. If you weren't expecting this, you can safely ignore this email - no account has been created yet.</p>
   `);
 }
 

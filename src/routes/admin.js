@@ -916,6 +916,17 @@ router.post('/tickets', requirePermission('tickets:reply'), asyncHandler(async (
     },
   });
 
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'TICKET_CREATED_BY_STAFF',
+      entityType: 'SupportTicket',
+      entityId: ticket.id,
+      newValues: { subject, category: ticket.category, forUserId: userId },
+      ipAddress: req.ip,
+    },
+  });
+
   res.status(201).json({ success: true, ticket });
 }));
 
@@ -989,7 +1000,11 @@ router.get('/tickets/:id', requirePermission('tickets:read'), asyncHandler(async
 }));
 
 router.post('/tickets/:id/reply', requirePermission('tickets:reply'), asyncHandler(async (req, res) => {
-  const { message, isInternal } = req.body;
+  const message = req.body.message?.trim();
+  const isInternal = req.body.isInternal;
+  if (!message) {
+    return res.status(400).json({ error: 'Bad Request', message: 'message is required.' });
+  }
 
   const ticket = await prisma.supportTicket.findUnique({
     where: { id: req.params.id },
@@ -1011,13 +1026,14 @@ router.post('/tickets/:id/reply', requirePermission('tickets:reply'), asyncHandl
     },
   });
 
-  // Update ticket status if needed
-  if (ticket.status === 'OPEN') {
-    await prisma.supportTicket.update({
-      where: { id: ticket.id },
-      data: { status: 'IN_PROGRESS', assignedTo: req.user.id },
-    });
-  }
+  // Always touch the ticket itself (bumps @updatedAt, so the requester's
+  // list sorted by updatedAt DESC reflects this reply even when it doesn't
+  // also change status - previously only the OPEN->IN_PROGRESS transition
+  // did an update at all).
+  await prisma.supportTicket.update({
+    where: { id: ticket.id },
+    data: ticket.status === 'OPEN' ? { status: 'IN_PROGRESS', assignedTo: req.user.id } : {},
+  });
 
   res.status(201).json({
     success: true,

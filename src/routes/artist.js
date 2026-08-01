@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
@@ -8,7 +9,6 @@ import { createReleaseSchema, updateReleaseSchema, submitReleaseSchema } from '.
 import { notifyN8n } from '../services/n8nWebhookService.js';
 import { computeTicketPriority } from '../utils/ticketPriority.js';
 import { detectContributorMatches } from '../services/contributorMatchService.js';
-import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import { sendEmail, labelInvitationEmailHtml } from '../services/emailService.js';
 import { getOrCreateDefaultLabelId } from '../services/labelService.js';
@@ -191,14 +191,23 @@ router.get('/stats', asyncHandler(async (req, res) => {
 // RELEASES
 // ===========================================
 
-// Get all releases for current user
+// Get all releases for current user - a LABEL account never creates
+// releases as itself, so for LABEL this aggregates every release owned by
+// an artist currently under that label instead of filtering by their own
+// userId (which would always be empty).
 router.get('/releases', asyncHandler(async (req, res) => {
   const { status, page = 1, limit = 20 } = req.query;
   const pageNum = parseInt(page) || 1;
   const limitNum = parseInt(limit) || 20;
 
+  let ownerFilter = { userId: req.user.id };
+  if (req.user.role === 'LABEL') {
+    const ownedLabel = await prisma.label.findFirst({ where: { userId: req.user.id } });
+    ownerFilter = { user: { labelId: ownedLabel?.id || '__none__' } };
+  }
+
   const where = {
-    userId: req.user.id,
+    ...ownerFilter,
     ...(status && { status }),
   };
 
@@ -221,6 +230,7 @@ router.get('/releases', asyncHandler(async (req, res) => {
         artistProfile: {
           select: { id: true, name: true, avatarUrl: true },
         },
+        ...(req.user.role === 'LABEL' && { user: { select: { id: true, name: true } } }),
       },
       orderBy: { createdAt: 'desc' },
       skip: (pageNum - 1) * limitNum,
@@ -241,10 +251,16 @@ router.get('/releases', asyncHandler(async (req, res) => {
 
 // Get single release
 router.get('/releases/:id', asyncHandler(async (req, res) => {
+  let ownerFilter = { userId: req.user.id };
+  if (req.user.role === 'LABEL') {
+    const ownedLabel = await prisma.label.findFirst({ where: { userId: req.user.id } });
+    ownerFilter = { user: { labelId: ownedLabel?.id || '__none__' } };
+  }
+
   const release = await prisma.release.findFirst({
     where: {
       id: req.params.id,
-      userId: req.user.id,
+      ...ownerFilter,
     },
     include: {
       tracks: {
@@ -276,8 +292,21 @@ router.post('/releases', requireOnboarded, validate(createReleaseSchema), asyncH
     releaseDate, originalReleaseDate, upc, catalogNumber,
     cLineYear, cLineText, pLineYear, pLineText,
     isExplicit, selectedStores, territories, coverArtKey,
-    tracks, artistProfileId, labelId,
+    tracks, artistProfileId, labelId, idempotencyKey,
   } = req.body;
+
+  // A retried submit (double-click, or the client never saw the 201 from a
+  // previous attempt) reuses the same key - return what already exists
+  // instead of creating a second DRAFT release with no cover/audio attached.
+  if (idempotencyKey) {
+    const existingRelease = await prisma.release.findFirst({
+      where: { userId: req.user.id, idempotencyKey },
+      include: { tracks: true, artistProfile: { select: { name: true } } },
+    });
+    if (existingRelease) {
+      return res.status(200).json({ ...existingRelease, artistName: existingRelease.artistProfile?.name });
+    }
+  }
 
   // Verify artist profile belongs to user
   if (artistProfileId) {
@@ -309,12 +338,17 @@ router.post('/releases', requireOnboarded, validate(createReleaseSchema), asyncH
     });
   }
 
-  // Create release with tracks
-  const release = await prisma.release.create({
+  // Create release with tracks. A second concurrent request with the same
+  // idempotencyKey (the precheck above is TOCTOU-racy by itself) collides on
+  // the DB's unique constraint instead of creating a duplicate.
+  let release;
+  try {
+    release = await prisma.release.create({
     data: {
       userId: req.user.id,
       artistProfileId,
       labelId,
+      idempotencyKey: idempotencyKey || null,
       title,
       version,
       releaseType,
@@ -364,6 +398,18 @@ router.post('/releases', requireOnboarded, validate(createReleaseSchema), asyncH
       artistProfile: { select: { name: true } },
     },
   });
+  } catch (err) {
+    if (err.code === 'P2002' && idempotencyKey) {
+      const existingRelease = await prisma.release.findFirst({
+        where: { userId: req.user.id, idempotencyKey },
+        include: { tracks: true, artistProfile: { select: { name: true } } },
+      });
+      if (existingRelease) {
+        return res.status(200).json({ ...existingRelease, artistName: existingRelease.artistProfile?.name });
+      }
+    }
+    throw err;
+  }
 
   // Audit log
   await prisma.auditLog.create({
@@ -921,6 +967,8 @@ router.get('/wallet/transactions', asyncHandler(async (req, res) => {
 // ===========================================
 // SUPPORT
 // ===========================================
+// Contract: { tickets: SupportTicket[] }, strictly scoped to the caller's
+// own tickets - never trust a client-supplied userId for this.
 router.get('/tickets', asyncHandler(async (req, res) => {
   const tickets = await prisma.supportTicket.findMany({
     where: { userId: req.user.id },
@@ -933,16 +981,26 @@ router.get('/tickets', asyncHandler(async (req, res) => {
     orderBy: { updatedAt: 'desc' },
   });
 
-  // Matches frontend's `api.get<SupportTicket[]>('/artist/tickets')` contract.
-  res.json(tickets);
+  res.json({ tickets });
 }));
 
+// Contract: 201 { success: true, ticket: SupportTicket }.
 router.post('/tickets', asyncHandler(async (req, res) => {
   // priority is never taken from the client - it's computed from category +
   // message content (see computeTicketPriority) so users can't self-escalate
   // and staff triage queues stay meaningful.
-  const { subject, category, message } = req.body;
+  const subject = req.body.subject?.trim();
+  const category = req.body.category?.trim();
+  const message = req.body.message?.trim();
+  if (!subject || !category || !message) {
+    return res.status(400).json({ error: 'Bad Request', message: 'subject, category, and message are required.' });
+  }
+  if (subject.length > 255 || message.length > 5000) {
+    return res.status(400).json({ error: 'Bad Request', message: 'subject or message is too long.' });
+  }
 
+  // Nested create is a single atomic write (ticket + its first message
+  // together) - no separate $transaction needed.
   const ticket = await prisma.supportTicket.create({
     data: {
       userId: req.user.id,
@@ -959,12 +1017,29 @@ router.post('/tickets', asyncHandler(async (req, res) => {
     include: { messages: true },
   });
 
-  // Matches frontend's `api.post<SupportTicket>('/artist/tickets', ...)` contract.
-  res.status(201).json(ticket);
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'TICKET_CREATED',
+      entityType: 'SupportTicket',
+      entityId: ticket.id,
+      newValues: { subject, category, forUserId: req.user.id },
+      ipAddress: req.ip,
+    },
+  });
+
+  res.status(201).json({ success: true, ticket });
 }));
 
+// Contract: 201 { success: true, ticketMessage: SupportTicketMessage }.
+// Ownership is enforced by scoping the initial lookup to userId: req.user.id
+// - a request for someone else's ticket ID finds nothing and 404s, same as
+// it not existing at all (no distinct "exists but isn't yours" signal).
 router.post('/tickets/:id/reply', asyncHandler(async (req, res) => {
-  const { message } = req.body;
+  const message = req.body.message?.trim();
+  if (!message) {
+    return res.status(400).json({ error: 'Bad Request', message: 'message is required.' });
+  }
 
   const ticket = await prisma.supportTicket.findFirst({
     where: {
@@ -990,13 +1065,13 @@ router.post('/tickets/:id/reply', asyncHandler(async (req, res) => {
     },
   });
 
-  // Update ticket status if closed
-  if (ticket.status === 'CLOSED' || ticket.status === 'RESOLVED') {
-    await prisma.supportTicket.update({
-      where: { id: ticket.id },
-      data: { status: 'OPEN' },
-    });
-  }
+  // Always touch the ticket itself (bumps @updatedAt) so "Your Recent
+  // Tickets" sorted by updatedAt DESC actually reflects new activity -
+  // previously this only happened when also reopening a closed ticket.
+  await prisma.supportTicket.update({
+    where: { id: ticket.id },
+    data: ticket.status === 'CLOSED' || ticket.status === 'RESOLVED' ? { status: 'OPEN' } : {},
+  });
 
   // Matches frontend's `api.post<{success}>('/artist/tickets/:id/reply', ...)`
   // contract. Field renamed from `message` (a string elsewhere in this API)
@@ -1115,114 +1190,179 @@ router.post('/plan/upgrade-request', asyncHandler(async (req, res) => {
   });
 }));
 
-// Grupo 4.2b: labels can create a brand-new artist account under their own
-// management, without that artist having registered themselves first.
-router.post('/label/artists', asyncHandler(async (req, res) => {
-  if (req.user.role !== 'LABEL') {
-    return res.status(403).json({ error: 'Forbidden', message: 'Solo las cuentas de Sello pueden crear artistas.' });
-  }
-  const ownedLabel = await prisma.label.findFirst({ where: { userId: req.user.id } });
-  if (!ownedLabel) {
-    return res.status(400).json({ error: 'Bad Request', message: 'No se encontró un Sello asociado a tu cuenta.' });
+// Rate limit label-initiated artist actions per calling account (not just
+// per IP - express-rate-limit defaults to IP, which does nothing to stop a
+// single label account behind a shared/captive IP from spamming invites or
+// claim attempts at the actual bottleneck, which is the label's own login).
+const labelArtistActionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  message: { error: 'Too Many Requests', message: 'Too many attempts, please try again in a few minutes.' },
+});
+
+const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function requireOwnedLabel() {
+  return asyncHandler(async (req, res, next) => {
+    if (req.user.role !== 'LABEL') {
+      return res.status(403).json({ error: 'Forbidden', code: 'LABEL_ROLE_REQUIRED', message: 'Solo las cuentas de Sello pueden gestionar artistas.' });
+    }
+    const ownedLabel = await prisma.label.findFirst({ where: { userId: req.user.id } });
+    if (!ownedLabel) {
+      return res.status(400).json({ error: 'Bad Request', code: 'LABEL_NOT_FOUND', message: 'No se encontró un Sello asociado a tu cuenta.' });
+    }
+    req.ownedLabel = ownedLabel;
+    next();
+  });
+}
+
+// Shared eligibility rules for claiming an artist - used by both the
+// prevalidation endpoint (so the UI can show the real reason before the
+// user even tries) and the actual claim below (so the rule can never be
+// bypassed by skipping the precheck).
+async function checkClaimEligibility(email, ownedLabelId) {
+  const target = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, name: true, email: true, avatarUrl: true, role: true, labelId: true },
+  });
+
+  if (!target || target.role !== 'ARTIST') {
+    return { eligible: false, code: 'ARTIST_NOT_FOUND', message: 'No se encontró un artista con ese correo.' };
   }
 
-  const { email, name } = req.body;
+  const defaultLabelId = await getOrCreateDefaultLabelId(prisma);
+  if (target.labelId === ownedLabelId) {
+    return { eligible: false, code: 'ARTIST_ALREADY_MANAGED', message: 'Este artista ya está en tu Sello.', artist: { name: target.name, avatarUrl: target.avatarUrl } };
+  }
+  if (target.labelId !== defaultLabelId) {
+    return { eligible: false, code: 'ARTIST_NOT_ELIGIBLE_FOR_CLAIM', message: 'Este artista ya es gestionado por otro Sello.' };
+  }
+
+  return { eligible: true, code: 'ELIGIBLE', message: 'Este artista puede ser reclamado.', target, artist: { name: target.name, avatarUrl: target.avatarUrl } };
+}
+
+// Grupo 4.2b: labels invite a not-yet-existing artist to join their roster.
+// Creates an invitation, not a User row - InsForge (the auth front door,
+// see AGENTS.md) always requires the account holder to pick their own
+// password via signUp(), so there is nothing to "pre-provision". The artist
+// only gets a real account once they click the link and accept it (see
+// AcceptInvite.tsx + POST /auth/sync-insforge-user's invitationToken path).
+router.post('/label/artists/invite', requireOwnedLabel(), labelArtistActionLimiter, asyncHandler(async (req, res) => {
+  const email = req.body.email?.trim().toLowerCase();
+  const name = req.body.name?.trim();
   if (!email || !name) {
     return res.status(400).json({ error: 'Bad Request', message: 'Nombre y correo electrónico son obligatorios.' });
   }
-
-  const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-  if (existing) {
-    return res.status(409).json({ error: 'Conflict', message: 'Ya existe una cuenta con ese correo.' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'El correo no es válido.' });
   }
 
-  // Unusable random password - the artist sets their own via the invite
-  // link below (same set-password flow as POST /auth/reset-password).
-  const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), parseInt(process.env.BCRYPT_ROUNDS) || 12);
+  const existingUser = await prisma.user.findUnique({ where: { email } });
+  if (existingUser) {
+    return res.status(409).json({
+      error: 'Conflict',
+      code: 'EMAIL_ALREADY_REGISTERED',
+      message: existingUser.role === 'ARTIST'
+        ? 'Ya existe una cuenta con ese correo. Usa "Reclamar Artista" si aún está en el Sello por defecto.'
+        : 'Ya existe una cuenta con ese correo.',
+    });
+  }
 
-  const newArtist = await prisma.$transaction(async (tx) => {
-    const user = await tx.user.create({
+  const rawToken = crypto.randomBytes(32).toString('hex');
+  const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+  const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
+
+  let invitation;
+  try {
+    invitation = await prisma.labelArtistInvitation.create({
       data: {
-        email: email.toLowerCase(),
-        passwordHash,
+        email,
         name,
-        role: 'ARTIST',
-        status: 'ACTIVE',
-        labelId: ownedLabel.id,
-        avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random&color=fff`,
+        labelId: req.ownedLabel.id,
+        invitedById: req.user.id,
+        tokenHash,
+        expiresAt,
       },
     });
-    await tx.subscription.create({ data: { userId: user.id, plan: 'FREE', commissionRate: 15, maxArtistProfiles: 1 } });
-    await tx.wallet.create({ data: { userId: user.id } });
-    await tx.artistProfile.create({
-      data: { userId: user.id, name, avatarUrl: user.avatarUrl },
-    });
-    return user;
-  });
+  } catch (err) {
+    // Unique constraint on (labelId, email, status='PENDING') - a real
+    // pending invite already exists, don't silently issue a second one.
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'Conflict', code: 'INVITATION_ALREADY_PENDING', message: 'Ya hay una invitación pendiente para ese correo.' });
+    }
+    throw err;
+  }
 
-  // No link-with-token flow here: InsForge (the credential front door as of
-  // 2026-07-31, see AGENTS.md) always requires the account holder to choose
-  // their own password via signUp() - there's no way to pre-set one for
-  // them. The artist signs up normally with this same email; POST
-  // /auth/sync-insforge-user links that InsForge identity to this
-  // already-provisioned row by email on first sync, preserving the label
-  // assignment set below.
   const baseUrl = req.get('origin') || process.env.FRONTEND_URL || 'http://localhost:3000';
   await sendEmail({
-    to: newArtist.email,
-    subject: `${ownedLabel.name} te agregó a EAJMUSIC`,
-    html: labelInvitationEmailHtml({ name, labelName: ownedLabel.name, email: newArtist.email, registerUrl: `${baseUrl}/register` }),
+    to: email,
+    subject: `${req.ownedLabel.name} te invitó a EAJMUSIC`,
+    html: labelInvitationEmailHtml({ name, labelName: req.ownedLabel.name, email, acceptUrl: `${baseUrl}/accept-invite?token=${rawToken}` }),
   });
 
   await prisma.auditLog.create({
     data: {
       userId: req.user.id,
-      action: 'LABEL_ARTIST_CREATED',
-      entityType: 'User',
-      entityId: newArtist.id,
-      newValues: { email: newArtist.email, name, labelId: ownedLabel.id },
+      action: 'LABEL_ARTIST_INVITED',
+      entityType: 'LabelArtistInvitation',
+      entityId: invitation.id,
+      newValues: { email, name, labelId: req.ownedLabel.id },
       ipAddress: req.ip,
     },
   });
 
-  res.status(201).json({ success: true, artist: { id: newArtist.id, name: newArtist.name, email: newArtist.email } });
+  res.status(201).json({
+    success: true,
+    invitation: { id: invitation.id, email: invitation.email, name: invitation.name, expiresAt: invitation.expiresAt },
+  });
+}));
+
+// Prevalidation so the UI can show the real rejection reason and disable
+// the claim button before the user even tries - see checkClaimEligibility.
+router.get('/label/artists/claim/check', requireOwnedLabel(), asyncHandler(async (req, res) => {
+  const email = req.query.email?.toString().trim().toLowerCase();
+  if (!email) {
+    return res.status(400).json({ error: 'Bad Request', message: 'El correo del artista es obligatorio.' });
+  }
+  const result = await checkClaimEligibility(email, req.ownedLabel.id);
+  res.json({ eligible: result.eligible, code: result.code, message: result.message, artist: result.artist });
 }));
 
 // Claim an existing artist that's still on the platform default label -
 // deliberately does NOT allow poaching an artist already managed by a
-// different real label.
-router.post('/label/artists/claim', asyncHandler(async (req, res) => {
-  if (req.user.role !== 'LABEL') {
-    return res.status(403).json({ error: 'Forbidden', message: 'Solo las cuentas de Sello pueden reclamar artistas.' });
-  }
-  const ownedLabel = await prisma.label.findFirst({ where: { userId: req.user.id } });
-  if (!ownedLabel) {
-    return res.status(400).json({ error: 'Bad Request', message: 'No se encontró un Sello asociado a tu cuenta.' });
-  }
-
-  const { email } = req.body;
+// different real label. The update is scoped by labelId in the WHERE
+// clause itself (not just checked beforehand) so two labels racing to claim
+// the same artist can't both succeed - only the request that actually still
+// finds the artist on the default label at write time updates anything.
+router.post('/label/artists/claim', requireOwnedLabel(), labelArtistActionLimiter, asyncHandler(async (req, res) => {
+  const email = req.body.email?.trim().toLowerCase();
   if (!email) {
     return res.status(400).json({ error: 'Bad Request', message: 'El correo del artista es obligatorio.' });
   }
 
-  const target = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
-  if (!target || target.role !== 'ARTIST') {
-    return res.status(404).json({ error: 'Not Found', message: 'No se encontró un artista con ese correo.' });
+  const eligibility = await checkClaimEligibility(email, req.ownedLabel.id);
+  if (!eligibility.eligible) {
+    const status = eligibility.code === 'ARTIST_NOT_FOUND' ? 404 : 403;
+    return res.status(status).json({ error: status === 404 ? 'Not Found' : 'Forbidden', code: eligibility.code, message: eligibility.message });
   }
 
   const defaultLabelId = await getOrCreateDefaultLabelId(prisma);
-  if (target.labelId !== defaultLabelId) {
-    return res.status(403).json({
-      error: 'Forbidden',
-      message: target.labelId === ownedLabel.id
-        ? 'Este artista ya está en tu Sello.'
-        : 'Este artista ya es gestionado por otro Sello.',
-    });
+  const { count } = await prisma.user.updateMany({
+    where: { id: eligibility.target.id, labelId: defaultLabelId, role: 'ARTIST' },
+    data: { labelId: req.ownedLabel.id },
+  });
+
+  if (count === 0) {
+    // Lost the race - another label claimed this artist between the check
+    // above and this write.
+    return res.status(409).json({ error: 'Conflict', code: 'ARTIST_ALREADY_MANAGED', message: 'Este artista acaba de ser reclamado por otro Sello.' });
   }
 
-  const updated = await prisma.user.update({
-    where: { id: target.id },
-    data: { labelId: ownedLabel.id },
+  const updated = await prisma.user.findUnique({
+    where: { id: eligibility.target.id },
     select: { id: true, name: true, email: true, avatarUrl: true },
   });
 
@@ -1231,8 +1371,9 @@ router.post('/label/artists/claim', asyncHandler(async (req, res) => {
       userId: req.user.id,
       action: 'LABEL_ARTIST_CLAIMED',
       entityType: 'User',
-      entityId: target.id,
-      newValues: { labelId: ownedLabel.id },
+      entityId: eligibility.target.id,
+      oldValues: { labelId: defaultLabelId },
+      newValues: { labelId: req.ownedLabel.id },
       ipAddress: req.ip,
     },
   });

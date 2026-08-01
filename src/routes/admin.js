@@ -14,6 +14,7 @@ import {
   updateSettingSchema,
 } from '../validators/admin.js';
 import { moderateTestimonialSchema } from '../validators/testimonial.js';
+import { sendEmail, employeeInvitationEmailHtml } from '../services/emailService.js';
 
 const router = Router();
 
@@ -124,7 +125,7 @@ router.get('/users', requirePermission('users:read'), asyncHandler(async (req, r
 // CREATE EMPLOYEE ACCOUNT (Super Admin only)
 // ===========================================
 router.post('/users', requireRole('SUPER_ADMIN'), validate(createEmployeeSchema), asyncHandler(async (req, res) => {
-  const { email, name, password, role, permissions } = req.body;
+  const { email, name, role, permissions } = req.body;
 
   const existingUser = await prisma.user.findUnique({ where: { email: email.toLowerCase() } });
   if (existingUser) {
@@ -134,11 +135,15 @@ router.post('/users', requireRole('SUPER_ADMIN'), validate(createEmployeeSchema)
     });
   }
 
-  // If no password was supplied, generate a one-time temporary password and
-  // return it in the response - it can never be recovered again since only
-  // its bcrypt hash is stored.
-  const generatedPassword = password || crypto.randomBytes(9).toString('base64url');
-  const passwordHash = await bcrypt.hash(generatedPassword, parseInt(process.env.BCRYPT_ROUNDS) || 12);
+  // Same pattern as label-invited artists / sync-insforge-user's own
+  // auto-provisioning: no admin-supplied or generated password. InsForge
+  // (the credential front door - see AGENTS.md) always requires the account
+  // holder to choose their own password via signUp(), so there's nothing
+  // useful to hand the Super Admin here - a "temporary password" would just
+  // be a value the employee could never actually use to log in. This column
+  // just can't be null; the real credential lives in InsForge once they
+  // sign up with this email.
+  const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), parseInt(process.env.BCRYPT_ROUNDS) || 12);
 
   const user = await prisma.user.create({
     data: {
@@ -172,11 +177,27 @@ router.post('/users', requireRole('SUPER_ADMIN'), validate(createEmployeeSchema)
     },
   });
 
+  // Same linking mechanism as label-invited artists: they sign up normally
+  // with this exact email, and POST /auth/sync-insforge-user attaches their
+  // new InsForge identity to this pre-provisioned (already-roled) row by
+  // email on first sync. NODE_ENV !== 'production' also logs the register
+  // link so this is testable without SMTP configured.
+  const registerUrl = `${process.env.FRONTEND_URL || 'https://eajmusic.com'}/register`;
+  const invitationSent = await sendEmail({
+    to: user.email,
+    subject: 'You\'ve been added to the EAJMUSIC team',
+    html: employeeInvitationEmailHtml({ name, role, email: user.email, registerUrl }),
+  });
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`\n[EMPLOYEE INVITATION] ${user.email} -> ${registerUrl}\n`);
+  }
+
   res.status(201).json({
     success: true,
     message: 'Employee account created successfully',
     user,
-    ...(!password && { temporaryPassword: generatedPassword }),
+    invitationSent,
+    registerUrl,
   });
 }));
 

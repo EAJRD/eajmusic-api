@@ -26,11 +26,24 @@ function getKey(header, callback) {
   });
 }
 
+// InsForge access tokens carry no `iss`/`aud` claims (confirmed by decoding
+// a real one: just sub/email/role/iat/exp) - there's nothing to check there.
+// The JWKS URL itself is already project-scoped (only this InsForge project's
+// key can produce a signature that verifies against it), which is what
+// would normally be `aud`'s job. `role` is the one claim worth asserting:
+// it should always be "authenticated" for a real end-user session token:
+// rejecting anything else stops a differently-scoped InsForge token (if one
+// ever existed) from being accepted here as a login credential.
+const EXPECTED_ROLE = 'authenticated';
+
 export function verifyInsforgeToken(token) {
   if (!client) return Promise.reject(new Error('INSFORGE_URL not configured'));
   return new Promise((resolve, reject) => {
     jwt.verify(token, getKey, { algorithms: ['RS256'] }, (err, decoded) => {
       if (err) return reject(err);
+      if (decoded.role !== EXPECTED_ROLE) {
+        return reject(new Error(`Unexpected InsForge token role: ${decoded.role}`));
+      }
       resolve(decoded);
     });
   });

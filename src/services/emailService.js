@@ -68,12 +68,13 @@ const BRAND_WRAPPER = (title, bodyHtml) => `
   </div>
 `;
 
-export function passwordResetEmailHtml({ name, resetUrl }) {
-  return BRAND_WRAPPER('Reset Your Password', `
+export function employeeInvitationEmailHtml({ name, role, email, registerUrl }) {
+  return BRAND_WRAPPER('You\'ve been added to the EAJMUSIC team', `
     <p>Hi ${name},</p>
-    <p>We received a request to reset your password. Click the button below to create a new one:</p>
-    <a href="${resetUrl}" style="display: inline-block; background: #7c3aed; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 16px 0;">Reset Password</a>
-    <p style="color: #666; font-size: 14px;">This link expires in 1 hour. If you didn't request this, you can safely ignore this email.</p>
+    <p>You've been given <strong>${role}</strong> access to the EAJMUSIC admin panel. To activate your account, sign up using this exact email address - your role and permissions are already set up:</p>
+    <p style="font-weight: bold;">${email}</p>
+    <a href="${registerUrl}" style="display: inline-block; background: #7c3aed; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 16px 0;">Create Your Account</a>
+    <p style="color: #666; font-size: 14px;">The sign-up page asks whether you're an Artist or a Label - it doesn't matter which you pick, your real ${role} access is already assigned and won't change. Choose your own password when you sign up. Once you're in, log in at eaj.eajmusic.com.</p>
   `);
 }
 
@@ -87,11 +88,3 @@ export function labelInvitationEmailHtml({ name, labelName, email, registerUrl }
   `);
 }
 
-export function verificationEmailHtml({ name, verifyUrl }) {
-  return BRAND_WRAPPER('Verify Your Email', `
-    <p>Hi ${name},</p>
-    <p>Welcome to EAJMUSIC! Confirm your email address to finish setting up your account:</p>
-    <a href="${verifyUrl}" style="display: inline-block; background: #7c3aed; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; margin: 16px 0;">Verify Email</a>
-    <p style="color: #666; font-size: 14px;">This link expires in 24 hours. If you didn't create this account, you can safely ignore this email.</p>
-  `);
-}

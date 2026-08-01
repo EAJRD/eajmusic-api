@@ -17,7 +17,6 @@ import adminRoutes from './routes/admin.js';
 import uploadRoutes from './routes/upload.js';
 import paymentRoutes from './routes/payment.js';
 import publicRoutes from './routes/public.js';
-import supportRoutes from './routes/support.js';
 // NEXT: mount additional routers here as they're built, e.g.
 //   import walletRoutes from './routes/wallet.js';
 //   app.use('/api/wallet', walletRoutes);
@@ -101,12 +100,10 @@ const authLimiter = rateLimit({
   max: 10,
   message: { error: 'Too many authentication attempts, please try again in 15 minutes.' },
 });
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/register', authLimiter);
 // The real login/register path since InsForge became the credential front
-// door (every signIn/signUp/OAuth exchange calls this to mint this API's
-// own session) - the old /login and /register above are effectively dead
-// but kept their rate limit; this one had none.
+// door - every signIn/signUp/OAuth exchange calls this to mint this API's
+// own session. The old bcrypt-based /login and /register routes (which used
+// to carry this same limiter) were removed entirely.
 app.use('/api/auth/sync-insforge-user', authLimiter);
 
 // Serve uploads: MinIO first (primary storage as of the file-storage
@@ -219,7 +216,6 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/public', publicRoutes);
-app.use('/api/support', supportRoutes);
 
 // ===========================================
 // ERROR HANDLING

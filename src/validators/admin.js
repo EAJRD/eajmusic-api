@@ -9,15 +9,9 @@ const ALL_ROLES = ['ARTIST', 'LABEL', 'ADMIN', 'SUPER_ADMIN', 'SUPPORT', 'REVIEW
 export const createEmployeeSchema = z.object({
   email: z.string().email('Invalid email address').max(255),
   name: z.string().min(2, 'Name must be at least 2 characters').max(255).trim(),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(100)
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      'Password must contain at least one uppercase letter, one lowercase letter, and one number'
-    )
-    .optional(),
+  // No password field: InsForge (the credential front door) always requires
+  // the account holder to choose their own via signUp() - see POST
+  // /admin/users in admin.js.
   role: z.enum(EMPLOYEE_ROLES),
   permissions: z.array(z.string()).optional().default([]),
 });

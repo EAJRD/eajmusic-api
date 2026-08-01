@@ -1,40 +1,8 @@
 import { z } from 'zod';
 
-export const registerSchema = z.object({
-  email: z
-    .string()
-    .email('Invalid email address')
-    .max(255, 'Email too long'),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .max(100, 'Password too long')
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      'Password must contain at least one uppercase letter, one lowercase letter, and one number'
-    ),
-  name: z
-    .string()
-    .min(2, 'Name must be at least 2 characters')
-    .max(255, 'Name too long')
-    .trim(),
-  accountType: z
-    .enum(['ARTIST', 'LABEL'])
-    .default('ARTIST'),
-});
-
-export const loginSchema = z.object({
-  email: z
-    .string()
-    .email('Invalid email address'),
-  password: z
-    .string()
-    .min(1, 'Password is required'),
-  rememberMe: z
-    .boolean()
-    .optional()
-    .default(false),
-});
+// Signup/login/OAuth/email-verification/password-reset all moved to
+// InsForge (see AGENTS.md and POST /auth/sync-insforge-user) - this file
+// only keeps schemas for routes this API still owns directly.
 
 export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
@@ -50,21 +18,6 @@ export const changePasswordSchema = z.object({
 }).refine((data) => data.newPassword === data.confirmPassword, {
   message: "Passwords don't match",
   path: ['confirmPassword'],
-});
-
-export const forgotPasswordSchema = z.object({
-  email: z.string().email('Invalid email address'),
-});
-
-export const resetPasswordSchema = z.object({
-  token: z.string().min(1, 'Token is required'),
-  password: z
-    .string()
-    .min(8, 'Password must be at least 8 characters')
-    .regex(
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/,
-      'Password must contain at least one uppercase letter, one lowercase letter, and one number'
-    ),
 });
 
 export const updateProfileSchema = z.object({

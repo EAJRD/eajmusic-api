@@ -59,7 +59,11 @@ router.post('/sync-insforge-user', asyncHandler(async (req, res) => {
   let decoded;
   try {
     decoded = await verifyInsforgeToken(insforgeToken);
-  } catch {
+  } catch (err) {
+    // No userId to attach an AuditLog row to for a rejected token - this is
+    // the "registrar intentos" coverage for the failure path specifically
+    // (successes are logged to AuditLog further down, once a user is known).
+    console.warn(`[sync-insforge-user] Rejected token from ${req.ip}: ${err.message}`);
     return res.status(401).json({ error: 'Unauthorized', message: 'Invalid or expired InsForge token' });
   }
 
@@ -70,13 +74,27 @@ router.post('/sync-insforge-user', asyncHandler(async (req, res) => {
   }
 
   // name/accountType are only meaningful the first time a brand-new signup
-  // provisions its business-data row; ignored on every later sync.
+  // provisions its business-data row; ignored on every later sync. Neither
+  // ever grants anything beyond ARTIST/LABEL - staff roles (ADMIN/SUPPORT/
+  // REVIEWER/FINANCE/SUPER_ADMIN) are never assignable here, they only ever
+  // come from an existing pre-provisioned row being linked by email (see
+  // POST /admin/users), where accountType/role from the client is never
+  // read at all. Still, reject garbage explicitly instead of silently
+  // coercing it - a client bug shouldn't be able to shove an unexpected
+  // string into the audit trail.
   const { name, accountType } = req.body;
+  if (accountType !== undefined && !['ARTIST', 'LABEL'].includes(accountType)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'accountType must be ARTIST or LABEL' });
+  }
+  if (name !== undefined && (typeof name !== 'string' || name.trim().length === 0 || name.length > 255)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'name must be a non-empty string up to 255 characters' });
+  }
 
   let user = await prisma.user.findUnique({
     where: { insforgeUserId },
     include: { subscription: { select: SUBSCRIPTION_SELECT } },
   });
+  let auditAction = 'INSFORGE_LOGIN';
 
   if (!user) {
     // Not linked yet. Either this is an existing (pre-InsForge) account
@@ -85,12 +103,14 @@ router.post('/sync-insforge-user', asyncHandler(async (req, res) => {
     const existingByEmail = await prisma.user.findUnique({ where: { email } });
 
     if (existingByEmail) {
+      auditAction = 'INSFORGE_ACCOUNT_LINKED';
       user = await prisma.user.update({
         where: { id: existingByEmail.id },
         data: { insforgeUserId, emailVerified: true },
         include: { subscription: { select: SUBSCRIPTION_SELECT } },
       });
     } else {
+      auditAction = 'INSFORGE_ACCOUNT_CREATED';
       const role = accountType === 'LABEL' ? 'LABEL' : 'ARTIST';
       const displayName = name || email.split('@')[0];
       // Unusable placeholder - InsForge owns the real credential now, this
@@ -154,6 +174,21 @@ router.post('/sync-insforge-user', asyncHandler(async (req, res) => {
     where: { id: user.id },
     data: { lastLoginAt: new Date(), lastLoginIp: req.ip },
   });
+
+  // "registrar intentos" - every successful sync (new account, first link,
+  // or an ordinary returning login) leaves an audit trail entry, same as
+  // the old bcrypt /login used to. Not awaited on the request's critical
+  // path since a logging failure should never block a real login.
+  prisma.auditLog.create({
+    data: {
+      userId: user.id,
+      action: auditAction,
+      entityType: 'User',
+      entityId: user.id,
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    },
+  }).catch(() => {});
 
   setAuthCookies(res, { accessToken, refreshToken });
 

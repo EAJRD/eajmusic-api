@@ -7,6 +7,11 @@
 #
 # Required: gh CLI, rsync, ssh
 # Setup: gh auth login --with-token < ~/.github-token
+#
+# NOTE: the frontend repo carries its own scripts/deploy-frontend.sh doing
+# the same job with sshpass instead of an ssh key. Two copies of a deploy
+# script that can take the site down is how they drift - if you change the
+# layout here, change it there too, or better, delete one.
 # ===========================================
 set -euo pipefail
 
@@ -60,14 +65,30 @@ log "New build detected: $LATEST_SHA"
 log "Extracting..."
 tar -xzf eajmusic-build.tar.gz
 
+# The archive contains three independent builds (main/, artist/, eaj/ - see
+# the frontend's package.json build:main/build:artist/build:eaj). Each one is
+# rsynced with a TRAILING SLASH so its *contents* land in the target, not the
+# directory itself.
+#
+# This previously rsynced `.` to all three targets, which copied main/,
+# artist/, eaj/ and the tarball itself into each docroot - leaving the main
+# site with no index.html at its root (a 403) and both subdomains holding a
+# full copy of all three apps. Do not "simplify" these paths back.
+for dir in main artist eaj; do
+  if [ ! -d "$dir" ]; then
+    log "ERROR: expected $dir/ in the build archive but it is missing. Aborting."
+    exit 1
+  fi
+done
+
 log "Deploying to main domain..."
-rsync -avz --delete -e "ssh $HOSTINGER_SSH_ARGS" . "${HOSTINGER_USER}@${HOSTINGER_HOST}:${MAIN_DIR}/"
+rsync -avz --delete -e "ssh $HOSTINGER_SSH_ARGS" ./main/ "${HOSTINGER_USER}@${HOSTINGER_HOST}:${MAIN_DIR}/"
 
 log "Deploying to artist subdomain..."
-rsync -avz --delete -e "ssh $HOSTINGER_SSH_ARGS" . "${HOSTINGER_USER}@${HOSTINGER_HOST}:${ARTIST_DIR}/"
+rsync -avz --delete -e "ssh $HOSTINGER_SSH_ARGS" ./artist/ "${HOSTINGER_USER}@${HOSTINGER_HOST}:${ARTIST_DIR}/"
 
 log "Deploying to admin subdomain..."
-rsync -avz --delete -e "ssh $HOSTINGER_SSH_ARGS" . "${HOSTINGER_USER}@${HOSTINGER_HOST}:${ADMIN_DIR}/"
+rsync -avz --delete -e "ssh $HOSTINGER_SSH_ARGS" ./eaj/ "${HOSTINGER_USER}@${HOSTINGER_HOST}:${ADMIN_DIR}/"
 
 echo "$LATEST_SHA" > /tmp/.eajmusic-deployed-sha
 rm -rf "$TEMP_DIR"

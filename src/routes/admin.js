@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole, requirePermission } from '../middleware/rbac.js';
 import { validate } from '../validators/auth.js';
 import { adminReviewSchema } from '../validators/release.js';
+import { getObjectStream } from '../services/minioStorageService.js';
 import {
   createEmployeeSchema,
   updateUserRoleSchema,
@@ -17,6 +20,21 @@ import { moderateTestimonialSchema } from '../validators/testimonial.js';
 import { sendEmail, employeeInvitationEmailHtml, EMAIL_FROM } from '../services/emailService.js';
 
 const router = Router();
+
+// Rewrites coverArtUrl to point at the admin-gated GET /releases/:id/cover
+// endpoint below instead of the public /uploads/images/... path, so the
+// admin panel doesn't itself advertise the raw object key/URL for
+// DRAFT/PENDING covers. NOTE: this does not by itself make those objects
+// unreachable - GET /uploads/:type/:filename (src/index.js) still serves
+// all `images/*` keys unauthenticated by design (see the comment there).
+// Real confidentiality for pre-LIVE covers would require gating that route
+// too, which needs a per-request release-status lookup and is a separate,
+// riskier change to a path that public pages (/talent, testimonials) rely on.
+function withAdminCoverUrl(req, release) {
+  if (!release || (!release.coverArtKey && !release.coverArtUrl)) return release;
+  const baseUrl = process.env.API_URL || `${req.protocol}://${req.get('host')}`;
+  return { ...release, coverArtUrl: `${baseUrl}/api/admin/releases/${release.id}/cover` };
+}
 
 // All routes require authentication and at least one admin-panel role.
 // Every route below layers a finer requirePermission()/requireRole(...)
@@ -346,7 +364,7 @@ router.get('/releases', requirePermission('releases:read'), asyncHandler(async (
   ]);
 
   res.json({
-    releases,
+    releases: releases.map((r) => withAdminCoverUrl(req, r)),
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
@@ -373,7 +391,7 @@ router.get('/releases/pending', requirePermission('releases:read'), asyncHandler
     orderBy: { submittedAt: 'asc' },
   });
 
-  res.json({ releases });
+  res.json({ releases: releases.map((r) => withAdminCoverUrl(req, r)) });
 }));
 
 router.get('/releases/:id', requirePermission('releases:read'), asyncHandler(async (req, res) => {
@@ -399,7 +417,47 @@ router.get('/releases/:id', requirePermission('releases:read'), asyncHandler(asy
     });
   }
 
-  res.json({ release });
+  res.json({ release: withAdminCoverUrl(req, release) });
+}));
+
+// Streams the release's cover art through the API instead of the public
+// /uploads/images/... path - see withAdminCoverUrl() above for why, and its
+// caveat about /uploads still serving the same object unauthenticated.
+router.get('/releases/:id/cover', requirePermission('releases:read'), asyncHandler(async (req, res) => {
+  const release = await prisma.release.findUnique({
+    where: { id: req.params.id },
+    select: { coverArtKey: true, coverArtUrl: true },
+  });
+
+  if (!release) {
+    return res.status(404).json({ error: 'Not Found', message: 'Release not found' });
+  }
+
+  // Older rows may only have coverArtUrl (no coverArtKey) - derive the
+  // `images/<file>` object key from the URL's tail as a fallback.
+  const objectKey = release.coverArtKey
+    || (release.coverArtUrl ? release.coverArtUrl.split('/uploads/')[1] : null);
+
+  if (!objectKey) {
+    return res.status(404).json({ error: 'Not Found', message: 'This release has no cover art' });
+  }
+
+  const mimeTypes = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
+  const contentType = mimeTypes[path.extname(objectKey).toLowerCase()] || 'application/octet-stream';
+
+  const minioStream = await getObjectStream(objectKey);
+  if (minioStream) {
+    res.setHeader('Content-Type', contentType);
+    minioStream.on('error', () => { if (!res.headersSent) res.status(500).end(); });
+    return minioStream.pipe(res);
+  }
+
+  const localPath = path.join(process.env.UPLOAD_DIR || './uploads', objectKey);
+  if (fs.existsSync(localPath)) {
+    return res.sendFile(path.resolve(localPath));
+  }
+
+  res.status(404).json({ error: 'Not Found', message: 'Cover art file not found in storage' });
 }));
 
 router.post('/releases/:id/review', requirePermission('releases:approve'), validate(adminReviewSchema), asyncHandler(async (req, res) => {

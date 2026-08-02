@@ -44,6 +44,7 @@
     "morgan": "^1.10.0",
     "multer": "^2.0.3",
     "music-metadata": "^11.14.0",
+    "nodemailer": "^9.0.3",
     "uuid": "^11.1.0",
     "zod": "^3.25.34"
   },

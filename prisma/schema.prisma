@@ -53,6 +53,10 @@ enum ReleaseStatus {
   LIVE
   REJECTED
   TAKEDOWN
+  // Distribution paused while a copyright claim is investigated. Distinct
+  // from TAKEDOWN, which is the permanent outcome - a HELD release is
+  // expected to go back to whatever it was (see Release.statusBeforeHold).
+  HELD
 }
 
 enum TrackStatus {
@@ -159,6 +163,10 @@ model User {
   supportTickets           SupportTicket[]           @relation("TicketCreator")
   assignedTickets          SupportTicket[]           @relation("TicketAssignee")
   ticketMessages           SupportTicketMessage[]
+  workflowEvents           TicketWorkflowEvent[]     @relation("WorkflowActor")
+  reversalsAgainstMe       FinancialReversal[]       @relation("ReversalSubject")
+  reversalsRequested       FinancialReversal[]       @relation("ReversalRequester")
+  reversalsApproved        FinancialReversal[]       @relation("ReversalApprover")
   sessions                 Session[]
   auditLogs                AuditLog[]
   announcements            Announcement[]
@@ -323,6 +331,11 @@ model Release {
   rejectionReason String?       @map("rejection_reason") @db.Text
   isExplicit      Boolean       @default(false) @map("is_explicit")
 
+  // What `status` was before a copyright hold, so lifting the hold restores
+  // the exact prior state instead of guessing at LIVE. Set when moving to
+  // HELD, cleared when the hold is lifted.
+  statusBeforeHold ReleaseStatus? @map("status_before_hold")
+
   // Distribution
   selectedStores Json @default("[\"all\"]") @map("selected_stores")
   territories    Json @default("[\"worldwide\"]")
@@ -338,6 +351,7 @@ model Release {
   tracks           Track[]
   royalties        Royalty[]
   takedownRequests TakedownRequest[]
+  relatedTickets   SupportTicket[]   @relation("TicketRelease")
 
   @@index([userId])
   @@index([status])
@@ -510,8 +524,9 @@ model Wallet {
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   // Relations
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  payouts Payout[]
+  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payouts   Payout[]
+  reversals FinancialReversal[]
 
   @@map("wallets")
 }
@@ -531,8 +546,10 @@ model Payout {
   requestedAt   DateTime     @default(now()) @map("requested_at")
 
   // Relations
-  user   User   @relation(fields: [userId], references: [id])
-  wallet Wallet @relation(fields: [walletId], references: [id])
+  user           User                @relation(fields: [userId], references: [id])
+  wallet         Wallet              @relation(fields: [walletId], references: [id])
+  relatedTickets SupportTicket[]     @relation("TicketPayout")
+  reversals      FinancialReversal[]
 
   @@map("payouts")
 }
@@ -549,11 +566,100 @@ model SupportTicket {
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
 
-  user     User                   @relation("TicketCreator", fields: [userId], references: [id])
-  assignee User?                  @relation("TicketAssignee", fields: [assignedTo], references: [id])
-  messages SupportTicketMessage[]
+  // Formal case handling. `status` above stays as the coarse
+  // OPEN/IN_PROGRESS/RESOLVED view every existing list/filter reads;
+  // workflowState is the real position in the state machine and is derived
+  // from the category at creation. See src/utils/ticketWorkflow.js.
+  workflowType  String @default("GENERAL") @map("workflow_type") @db.VarChar(40)
+  workflowState String @default("OPEN") @map("workflow_state") @db.VarChar(40)
 
+  // What the case is actually about, when it is about something. A copyright
+  // claim or takedown points at the release it would hold; a failed payment
+  // points at the payout that failed. Null for GENERAL tickets.
+  relatedReleaseId String? @map("related_release_id")
+  relatedPayoutId  String? @map("related_payout_id")
+
+  user           User                   @relation("TicketCreator", fields: [userId], references: [id])
+  assignee       User?                  @relation("TicketAssignee", fields: [assignedTo], references: [id])
+  messages       SupportTicketMessage[]
+  workflowEvents TicketWorkflowEvent[]
+  reversals      FinancialReversal[]
+  relatedRelease Release?               @relation("TicketRelease", fields: [relatedReleaseId], references: [id])
+  relatedPayout  Payout?                @relation("TicketPayout", fields: [relatedPayoutId], references: [id])
+
+  @@index([workflowType, workflowState])
   @@map("support_tickets")
+}
+
+// Append-only record of every state change on a ticket: who moved it, from
+// where to where, why, and which backend operation it triggered. Separate
+// from AuditLog because this is the case file an operator (or a regulator)
+// reads end to end, not a firehose of every admin action on the platform.
+model TicketWorkflowEvent {
+  id         String   @id @default(uuid())
+  ticketId   String   @map("ticket_id")
+  actorId    String   @map("actor_id")
+  fromState  String   @map("from_state") @db.VarChar(40)
+  toState    String   @map("to_state") @db.VarChar(40)
+  effect     String?  @db.VarChar(40)
+  note       String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor  User          @relation("WorkflowActor", fields: [actorId], references: [id])
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_workflow_events")
+}
+
+// A request to move money back, held under a two-person rule: whoever
+// requests it can never be whoever approves it (enforced in
+// POST /admin/reversals/:id/approve, not by a permission - both live on
+// FINANCE by design). Nothing touches a wallet until approval, and the
+// balances at both moments are captured so the change is reconstructable.
+//
+// The two-person rule also exists as a CHECK constraint
+// (financial_reversals_two_person_rule, see the 20260802020000 migration)
+// so the database refuses a self-approved row regardless of application
+// code. Prisma cannot express CHECK constraints, so it will not appear in
+// this file - do not drop it when regenerating migrations.
+model FinancialReversal {
+  id       String @id @default(uuid())
+  userId   String @map("user_id")
+  walletId String @map("wallet_id")
+
+  amount   Decimal @db.Decimal(12, 2)
+  currency String  @default("USD") @db.Char(3)
+  reason   String  @db.Text
+
+  // PENDING -> APPROVED (executed) | REJECTED
+  status String @default("PENDING") @db.VarChar(20)
+
+  ticketId  String? @map("ticket_id")
+  payoutId  String? @map("payout_id")
+
+  requestedById String   @map("requested_by_id")
+  requestedAt   DateTime @default(now()) @map("requested_at")
+
+  approvedById String?   @map("approved_by_id")
+  approvedAt   DateTime? @map("approved_at")
+  decisionNote String?   @map("decision_note") @db.Text
+
+  // Wallet available balance immediately before and after execution - the
+  // reversal is the only money movement with no upstream ledger to check it
+  // against, so it carries its own before/after.
+  balanceBefore Decimal? @map("balance_before") @db.Decimal(12, 2)
+  balanceAfter  Decimal? @map("balance_after") @db.Decimal(12, 2)
+
+  user        User           @relation("ReversalSubject", fields: [userId], references: [id])
+  wallet      Wallet         @relation(fields: [walletId], references: [id])
+  requestedBy User           @relation("ReversalRequester", fields: [requestedById], references: [id])
+  approvedBy  User?          @relation("ReversalApprover", fields: [approvedById], references: [id])
+  ticket      SupportTicket? @relation(fields: [ticketId], references: [id])
+  payout      Payout?        @relation(fields: [payoutId], references: [id])
+
+  @@index([status, requestedAt])
+  @@map("financial_reversals")
 }
 
 model SupportTicketMessage {

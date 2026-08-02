@@ -8,6 +8,7 @@ import { validate } from '../validators/auth.js';
 import { createReleaseSchema, updateReleaseSchema, submitReleaseSchema } from '../validators/release.js';
 import { notifyN8n } from '../services/n8nWebhookService.js';
 import { computeTicketPriority } from '../utils/ticketPriority.js';
+import { workflowTypeForCategory, initialStateFor } from '../utils/ticketWorkflow.js';
 import { detectContributorMatches } from '../services/contributorMatchService.js';
 import crypto from 'crypto';
 import { sendEmail, labelInvitationEmailHtml, EMAIL_FROM } from '../services/emailService.js';
@@ -1001,12 +1002,20 @@ router.post('/tickets', asyncHandler(async (req, res) => {
 
   // Nested create is a single atomic write (ticket + its first message
   // together) - no separate $transaction needed.
+  //
+  // The category also decides which formal workflow governs the case (a
+  // takedown request is not just a thread, it has states and real backend
+  // effects) - see src/utils/ticketWorkflow.js. Categories with no mapping
+  // fall through to GENERAL and behave exactly as tickets always have.
+  const workflowType = workflowTypeForCategory(category);
   const ticket = await prisma.supportTicket.create({
     data: {
       userId: req.user.id,
       subject,
       category,
       priority: computeTicketPriority(category, message),
+      workflowType,
+      workflowState: initialStateFor(workflowType),
       messages: {
         create: {
           userId: req.user.id,

@@ -6,7 +6,16 @@ import path from 'path';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 import { authenticate } from '../middleware/auth.js';
-import { requireRole, requirePermission } from '../middleware/rbac.js';
+import { requireRole, requirePermission, userHasPermission } from '../middleware/rbac.js';
+import {
+  availableTransitions,
+  validateTransition,
+  isTerminalState,
+  coarseStatusFor,
+  workflowTypeForCategory,
+  initialStateFor,
+} from '../utils/ticketWorkflow.js';
+import { applyEffect, WorkflowEffectError } from '../services/ticketWorkflowEffects.js';
 import { validate } from '../validators/auth.js';
 import { adminReviewSchema } from '../validators/release.js';
 import { getObjectStream } from '../services/minioStorageService.js';
@@ -49,7 +58,10 @@ router.use(requireRole('ADMIN', 'SUPER_ADMIN', 'SUPPORT', 'REVIEWER', 'FINANCE')
 // ===========================================
 // DASHBOARD STATS
 // ===========================================
-router.get('/stats', requireRole('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req, res) => {
+// Includes platform-wide revenue totals, so this is not open to every
+// admin-panel role - dashboard:read is granted to ADMIN/FINANCE only
+// (SUPER_ADMIN via '*'). SUPPORT and REVIEWER land on their own tab instead.
+router.get('/stats', requirePermission('dashboard:read'), asyncHandler(async (req, res) => {
   const [
     totalUsers,
     activeReleases,
@@ -514,7 +526,7 @@ router.post('/releases/:id/review', requirePermission('releases:approve'), valid
 // ===========================================
 // TAKEDOWNS
 // ===========================================
-router.get('/takedowns', requireRole('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req, res) => {
+router.get('/takedowns', requirePermission('takedowns:read'), asyncHandler(async (req, res) => {
   const takedowns = await prisma.takedownRequest.findMany({
     include: {
       release: {
@@ -529,7 +541,7 @@ router.get('/takedowns', requireRole('ADMIN', 'SUPER_ADMIN'), asyncHandler(async
   res.json({ takedowns });
 }));
 
-router.post('/takedowns/:id/resolve', requireRole('ADMIN', 'SUPER_ADMIN'), asyncHandler(async (req, res) => {
+router.post('/takedowns/:id/resolve', requirePermission('takedowns:execute'), asyncHandler(async (req, res) => {
   const { action, resolution } = req.body;
 
   const takedown = await prisma.takedownRequest.findUnique({
@@ -953,6 +965,10 @@ router.post('/tickets', requirePermission('tickets:reply'), asyncHandler(async (
     return res.status(404).json({ error: 'Not Found', message: 'User not found' });
   }
 
+  // Same category -> workflow mapping as the artist-facing form, so a
+  // staff-opened copyright case gets the same state machine as one the
+  // artist filed themselves.
+  const workflowType = workflowTypeForCategory(category || 'General');
   const ticket = await prisma.supportTicket.create({
     data: {
       userId,
@@ -960,6 +976,8 @@ router.post('/tickets', requirePermission('tickets:reply'), asyncHandler(async (
       category: category || 'General',
       priority: priority || 'normal',
       status: 'OPEN',
+      workflowType,
+      workflowState: initialStateFor(workflowType),
       assignedTo: req.user.id,
       messages: {
         create: {
@@ -1100,6 +1118,10 @@ router.post('/tickets/:id/reply', requirePermission('tickets:reply'), asyncHandl
   });
 }));
 
+// Coarse status. Kept for GENERAL tickets and for the plain
+// "mark this thread done" case; the risk-carrying categories move through
+// POST /tickets/:id/workflow/transition below instead, which is the only
+// path that can trigger a real backend operation.
 router.patch('/tickets/:id/status', requirePermission('tickets:status'), asyncHandler(async (req, res) => {
   const { status } = req.body;
 
@@ -1107,6 +1129,25 @@ router.patch('/tickets/:id/status', requirePermission('tickets:status'), asyncHa
     return res.status(400).json({
       error: 'Bad Request',
       message: 'Invalid status',
+    });
+  }
+
+  const existing = await prisma.supportTicket.findUnique({
+    where: { id: req.params.id },
+    select: { workflowType: true },
+  });
+  if (!existing) {
+    return res.status(404).json({ error: 'Not Found', message: 'Ticket not found' });
+  }
+
+  // A copyright claim or reversal can't be closed by flipping the coarse
+  // status - that would leave the release held or the money un-reversed
+  // while the case reads as finished.
+  if (existing.workflowType !== 'GENERAL') {
+    return res.status(409).json({
+      error: 'Conflict',
+      code: 'WORKFLOW_TICKET',
+      message: `Este ticket sigue el flujo "${existing.workflowType}". Usa POST /admin/tickets/${req.params.id}/workflow/transition.`,
     });
   }
 
@@ -1123,6 +1164,394 @@ router.patch('/tickets/:id/status', requirePermission('tickets:status'), asyncHa
     message: 'Ticket status updated',
     ticket,
   });
+}));
+
+// ===========================================
+// FINANCIAL REVERSALS (two-person rule)
+// ===========================================
+// The one money movement that no single person can complete. Requesting and
+// approving are separate calls by separate people; the wallet is not touched
+// until approval, and the rejection path exists so a bad request dies
+// visibly instead of lingering as a pending claim on someone's balance.
+
+router.get('/reversals', requirePermission('finance:read'), asyncHandler(async (req, res) => {
+  const { status } = req.query;
+
+  const reversals = await prisma.financialReversal.findMany({
+    where: status ? { status } : {},
+    include: {
+      user: { select: { id: true, name: true, email: true } },
+      requestedBy: { select: { id: true, name: true } },
+      approvedBy: { select: { id: true, name: true } },
+      ticket: { select: { id: true, subject: true } },
+    },
+    orderBy: { requestedAt: 'desc' },
+  });
+
+  res.json({
+    reversals,
+    // So the UI can show "you requested this, someone else must approve it"
+    // without re-deriving the rule client-side.
+    currentUserId: req.user.id,
+  });
+}));
+
+router.post('/reversals', requirePermission('reversals:request'), asyncHandler(async (req, res) => {
+  const { userId, amount, reason, ticketId, payoutId } = req.body;
+
+  const value = Number(amount);
+  if (!userId || !Number.isFinite(value) || value <= 0) {
+    return res.status(400).json({ error: 'Bad Request', message: 'userId y un amount mayor que 0 son obligatorios.' });
+  }
+  if (!String(reason || '').trim()) {
+    return res.status(400).json({ error: 'Bad Request', message: 'El motivo es obligatorio: queda en la auditoría.' });
+  }
+
+  const wallet = await prisma.wallet.findUnique({ where: { userId } });
+  if (!wallet) {
+    return res.status(400).json({ error: 'Bad Request', message: 'Ese usuario no tiene wallet.' });
+  }
+
+  const reversal = await prisma.financialReversal.create({
+    data: {
+      userId,
+      walletId: wallet.id,
+      amount: value,
+      currency: wallet.currency,
+      reason: reason.trim(),
+      ticketId: ticketId || null,
+      payoutId: payoutId || null,
+      requestedById: req.user.id,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'REVERSAL_REQUESTED',
+      entityType: 'FinancialReversal',
+      entityId: reversal.id,
+      newValues: { userId, amount: value, reason: reason.trim(), ticketId: ticketId || null },
+      ipAddress: req.ip,
+    },
+  });
+
+  res.status(201).json({
+    success: true,
+    message: 'Reverso solicitado. Requiere la aprobación de otra persona para ejecutarse.',
+    reversal,
+  });
+}));
+
+// The second signature. Executes the wallet movement on approval; rejects
+// without touching money otherwise.
+router.post('/reversals/:id/approve', requirePermission('reversals:approve'), asyncHandler(async (req, res) => {
+  const { decision, note } = req.body;
+
+  if (!['APPROVE', 'REJECT'].includes(decision)) {
+    return res.status(400).json({ error: 'Bad Request', message: 'decision debe ser APPROVE o REJECT.' });
+  }
+  if (!String(note || '').trim()) {
+    return res.status(400).json({ error: 'Bad Request', message: 'La nota de decisión es obligatoria.' });
+  }
+
+  const reversal = await prisma.financialReversal.findUnique({ where: { id: req.params.id } });
+  if (!reversal) {
+    return res.status(404).json({ error: 'Not Found', message: 'Reverso no encontrado.' });
+  }
+  if (reversal.status !== 'PENDING') {
+    return res.status(409).json({
+      error: 'Conflict',
+      code: 'ALREADY_DECIDED',
+      message: `Este reverso ya fue ${reversal.status === 'APPROVED' ? 'aprobado' : 'rechazado'}.`,
+    });
+  }
+
+  // THE two-person rule. Not a permission check - FINANCE legitimately holds
+  // both reversals:request and reversals:approve; what must differ is the
+  // person. Also enforced by a CHECK constraint on the table, so a bug here
+  // cannot produce a self-approved reversal.
+  if (reversal.requestedById === req.user.id) {
+    return res.status(403).json({
+      error: 'Forbidden',
+      code: 'SELF_APPROVAL',
+      message: 'No puedes aprobar un reverso que tú mismo solicitaste. Requiere una segunda persona.',
+    });
+  }
+
+  if (decision === 'REJECT') {
+    const rejected = await prisma.financialReversal.update({
+      where: { id: reversal.id },
+      data: {
+        status: 'REJECTED',
+        approvedById: req.user.id,
+        approvedAt: new Date(),
+        decisionNote: note.trim(),
+      },
+    });
+
+    await prisma.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'REVERSAL_REJECTED',
+        entityType: 'FinancialReversal',
+        entityId: reversal.id,
+        oldValues: { status: 'PENDING' },
+        newValues: { status: 'REJECTED', note: note.trim() },
+        ipAddress: req.ip,
+      },
+    });
+
+    return res.json({ success: true, message: 'Reverso rechazado. No se movió dinero.', reversal: rejected });
+  }
+
+  const executed = await prisma.$transaction(async (tx) => {
+    const wallet = await tx.wallet.findUnique({ where: { id: reversal.walletId } });
+    if (!wallet) {
+      throw Object.assign(new Error('La wallet asociada ya no existe.'), { statusCode: 400 });
+    }
+
+    const before = Number(wallet.availableBalance);
+    const value = Number(reversal.amount);
+    if (before < value) {
+      throw Object.assign(
+        new Error(`Saldo disponible insuficiente: $${before.toFixed(2)} contra un reverso de $${value.toFixed(2)}.`),
+        { statusCode: 400, code: 'INSUFFICIENT_BALANCE' }
+      );
+    }
+
+    const updatedWallet = await tx.wallet.update({
+      where: { id: wallet.id },
+      data: { availableBalance: { decrement: value } },
+    });
+
+    const updated = await tx.financialReversal.update({
+      where: { id: reversal.id },
+      data: {
+        status: 'APPROVED',
+        approvedById: req.user.id,
+        approvedAt: new Date(),
+        decisionNote: note.trim(),
+        balanceBefore: before,
+        balanceAfter: Number(updatedWallet.availableBalance),
+      },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        userId: req.user.id,
+        action: 'REVERSAL_EXECUTED',
+        entityType: 'FinancialReversal',
+        entityId: reversal.id,
+        oldValues: { status: 'PENDING', availableBalance: before },
+        newValues: {
+          status: 'APPROVED',
+          availableBalance: Number(updatedWallet.availableBalance),
+          amount: value,
+          requestedById: reversal.requestedById,
+          approvedById: req.user.id,
+          note: note.trim(),
+        },
+        ipAddress: req.ip,
+      },
+    });
+
+    return updated;
+  });
+
+  res.json({
+    success: true,
+    message: 'Reverso aprobado y ejecutado.',
+    reversal: executed,
+  });
+}));
+
+// ===========================================
+// TICKET WORKFLOWS
+// ===========================================
+
+// The case file: current position, every move still legal from here (already
+// filtered to what THIS caller may do), and the full transition history.
+router.get('/tickets/:id/workflow', requirePermission('tickets:read'), asyncHandler(async (req, res) => {
+  const ticket = await prisma.supportTicket.findUnique({
+    where: { id: req.params.id },
+    include: {
+      workflowEvents: {
+        include: { actor: { select: { id: true, name: true, role: true } } },
+        orderBy: { createdAt: 'asc' },
+      },
+      reversals: {
+        include: {
+          requestedBy: { select: { id: true, name: true } },
+          approvedBy: { select: { id: true, name: true } },
+        },
+        orderBy: { requestedAt: 'desc' },
+      },
+    },
+  });
+
+  if (!ticket) {
+    return res.status(404).json({ error: 'Not Found', message: 'Ticket not found' });
+  }
+
+  const all = availableTransitions(ticket.workflowType, ticket.workflowState);
+
+  res.json({
+    workflowType: ticket.workflowType,
+    workflowState: ticket.workflowState,
+    isTerminal: isTerminalState(ticket.workflowType, ticket.workflowState),
+    relatedReleaseId: ticket.relatedReleaseId,
+    relatedPayoutId: ticket.relatedPayoutId,
+    // `allowed` is what this caller can actually click; `blocked` is shown
+    // greyed out with the permission it needs, so an operator can see the
+    // next step exists and who to hand it to rather than hitting a dead end.
+    allowed: all.filter((t) => userHasPermission(req.user, t.permission)),
+    blocked: all.filter((t) => !userHasPermission(req.user, t.permission)),
+    history: ticket.workflowEvents,
+    reversals: ticket.reversals,
+  });
+}));
+
+// Advance the case. Validates the move against the state machine, checks the
+// per-transition permission, applies the declared backend effect, and writes
+// both the case-file event and a platform AuditLog entry - all in one
+// transaction, so a ticket can never advance without its effect landing.
+router.post('/tickets/:id/workflow/transition', requirePermission('tickets:read'), asyncHandler(async (req, res) => {
+  const { to, note, amount } = req.body;
+
+  if (!to) {
+    return res.status(400).json({ error: 'Bad Request', message: 'Falta el estado destino ("to").' });
+  }
+
+  const ticket = await prisma.supportTicket.findUnique({ where: { id: req.params.id } });
+  if (!ticket) {
+    return res.status(404).json({ error: 'Not Found', message: 'Ticket not found' });
+  }
+
+  const check = validateTransition({
+    workflowType: ticket.workflowType,
+    from: ticket.workflowState,
+    to,
+    note,
+    hasPermission: (permission) => userHasPermission(req.user, permission),
+  });
+
+  if (!check.ok) {
+    // A permission failure is a 403; everything else is the caller asking
+    // for a move that doesn't exist or isn't ready.
+    const status = check.code === 'FORBIDDEN_TRANSITION' ? 403 : 400;
+    return res.status(status).json({ error: status === 403 ? 'Forbidden' : 'Bad Request', code: check.code, message: check.message });
+  }
+
+  const { transition } = check;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const effectResult = transition.effect
+        ? await applyEffect(transition.effect, tx, ticket, { amount, note, actorId: req.user.id })
+        : null;
+
+      const updated = await tx.supportTicket.update({
+        where: { id: ticket.id },
+        data: {
+          workflowState: to,
+          status: coarseStatusFor(ticket.workflowType, to),
+          ...(transition.terminal && { resolvedAt: new Date() }),
+        },
+      });
+
+      const event = await tx.ticketWorkflowEvent.create({
+        data: {
+          ticketId: ticket.id,
+          actorId: req.user.id,
+          fromState: ticket.workflowState,
+          toState: to,
+          effect: transition.effect,
+          note: note || null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          userId: req.user.id,
+          action: 'TICKET_WORKFLOW_TRANSITION',
+          entityType: 'SupportTicket',
+          entityId: ticket.id,
+          oldValues: { workflowState: ticket.workflowState },
+          newValues: {
+            workflowState: to,
+            workflowType: ticket.workflowType,
+            effect: transition.effect,
+            effectResult,
+            note: note || null,
+          },
+          ipAddress: req.ip,
+        },
+      });
+
+      return { updated, event, effectResult };
+    });
+
+    res.json({
+      success: true,
+      message: `Ticket movido a "${to}".`,
+      ticket: result.updated,
+      event: result.event,
+      effectResult: result.effectResult,
+    });
+  } catch (err) {
+    if (err instanceof WorkflowEffectError) {
+      return res.status(err.statusCode).json({ error: 'Bad Request', code: err.code, message: err.message });
+    }
+    throw err;
+  }
+}));
+
+// Link a ticket to the release or payout it is actually about. A copyright
+// or takedown case can't execute anything until this is set (the effects
+// refuse to run without it).
+router.patch('/tickets/:id/link', requirePermission('tickets:status'), asyncHandler(async (req, res) => {
+  const { releaseId, payoutId } = req.body;
+
+  const ticket = await prisma.supportTicket.findUnique({ where: { id: req.params.id } });
+  if (!ticket) {
+    return res.status(404).json({ error: 'Not Found', message: 'Ticket not found' });
+  }
+
+  if (releaseId) {
+    const release = await prisma.release.findUnique({ where: { id: releaseId }, select: { id: true } });
+    if (!release) {
+      return res.status(400).json({ error: 'Bad Request', message: 'Ese release no existe.' });
+    }
+  }
+  if (payoutId) {
+    const payout = await prisma.payout.findUnique({ where: { id: payoutId }, select: { id: true } });
+    if (!payout) {
+      return res.status(400).json({ error: 'Bad Request', message: 'Ese payout no existe.' });
+    }
+  }
+
+  const updated = await prisma.supportTicket.update({
+    where: { id: ticket.id },
+    data: {
+      ...(releaseId !== undefined && { relatedReleaseId: releaseId || null }),
+      ...(payoutId !== undefined && { relatedPayoutId: payoutId || null }),
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      userId: req.user.id,
+      action: 'TICKET_LINKED',
+      entityType: 'SupportTicket',
+      entityId: ticket.id,
+      oldValues: { relatedReleaseId: ticket.relatedReleaseId, relatedPayoutId: ticket.relatedPayoutId },
+      newValues: { relatedReleaseId: updated.relatedReleaseId, relatedPayoutId: updated.relatedPayoutId },
+      ipAddress: req.ip,
+    },
+  });
+
+  res.json({ success: true, ticket: updated });
 }));
 
 // Manually assign a ticket to a staff member (SUPPORT/ADMIN/SUPER_ADMIN).
@@ -1242,7 +1671,10 @@ router.get('/users/:id/wallet', requirePermission('finance:read'), asyncHandler(
 // for this - the before/after values are captured on the AuditLog entry,
 // which is enough for a manual, infrequent admin action; a real per-entry
 // transaction history would be schema work for a later pass.
-router.patch('/users/:id/wallet', requirePermission('finance:write'), asyncHandler(async (req, res) => {
+// wallets:adjust, not finance:write - this is the one route that moves a
+// real balance by hand, so it stays with FINANCE (and SUPER_ADMIN) even
+// though ADMIN can see the same figures via finance:read above.
+router.patch('/users/:id/wallet', requirePermission('wallets:adjust'), asyncHandler(async (req, res) => {
   const { availableBalance, pendingBalance, reason } = req.body;
 
   if (availableBalance === undefined && pendingBalance === undefined) {

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>EAJ Music — Sello Discográfico Independiente</title>
-  <meta name="description" content="Sello discográfico independiente de Puerto Rico para el mundo. Catálogo, lanzamientos y desarrollo de artistas independientes.">
+  <meta name="description" content="Sello discográfico independiente de Puerto Rico para el mundo. Catálogo interactivo, lanzamientos y desarrollo de artistas independientes.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -12,9 +12,12 @@
     :root {
       --bg-black: #0b0b0d;
       --bg-surface: #141418;
+      --bg-surface-elevated: #1a1a22;
       --accent-gold: #e5b358;
       --accent-gold-light: #f3cf88;
+      --accent-gold-glow: rgba(229, 179, 88, 0.28);
       --border-subtle: #24242c;
+      --border-gold: rgba(229, 179, 88, 0.4);
       --text-main: #f4f4f6;
       --text-muted: #9595a2;
     }
@@ -23,6 +26,7 @@
       margin: 0;
       padding: 0;
       box-sizing: border-box;
+      scroll-behavior: smooth;
     }
 
     body {
@@ -32,6 +36,7 @@
       line-height: 1.6;
       overflow-x: hidden;
       position: relative;
+      padding-bottom: 90px; /* Espacio para el reproductor persistente */
     }
 
     /* Textura de vinilo y micrograno analógico */
@@ -73,7 +78,7 @@
       border-radius: 50%;
       background: #18181e;
       border: 1px solid var(--accent-gold);
-      box-shadow: 0 0 15px rgba(229, 179, 88, 0.25);
+      box-shadow: 0 0 15px var(--accent-gold-glow);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -81,6 +86,24 @@
       font-weight: 800;
       color: var(--accent-gold);
       font-size: 1.05rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .logo-badge::after {
+      content: "";
+      position: absolute;
+      width: 100%;
+      height: 2px;
+      background: var(--accent-gold);
+      opacity: 0.7;
+      animation: sweep 3s infinite linear;
+    }
+
+    @keyframes sweep {
+      0% { transform: translateY(-20px); opacity: 0; }
+      50% { opacity: 0.8; }
+      100% { transform: translateY(20px); opacity: 0; }
     }
 
     .brand-name {
@@ -118,6 +141,8 @@
       text-decoration: none;
       transition: transform 0.2s, box-shadow 0.2s;
       display: inline-block;
+      border: none;
+      cursor: pointer;
     }
 
     .btn-gold:hover {
@@ -128,7 +153,7 @@
     /* Hero Section */
     .hero {
       max-width: 1140px;
-      margin: 4rem auto 6rem;
+      margin: 3.5rem auto 5.5rem;
       padding: 0 1.5rem;
       text-align: center;
       position: relative;
@@ -170,6 +195,436 @@
       margin: 0 auto 2.5rem;
     }
 
+    .hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--border-subtle);
+      padding: 0.6rem 1.35rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .btn-outline:hover {
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
+    /* SECCIÓN CATÁLOGO MUSICAL INTERACTIVO */
+    .catalog-section {
+      max-width: 1140px;
+      margin: 0 auto 6rem;
+      padding: 0 1.5rem;
+      position: relative;
+      z-index: 10;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .section-badge {
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--accent-gold);
+      margin-bottom: 0.5rem;
+      display: inline-block;
+    }
+
+    .section-header h2 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-header p {
+      color: var(--text-muted);
+      font-size: 1rem;
+      max-width: 580px;
+      margin: 0 auto;
+    }
+
+    /* Filtros del Catálogo */
+    .catalog-filters {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 0.45rem 1.15rem;
+      border-radius: 20px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .filter-btn:hover {
+      border-color: var(--accent-gold);
+      color: #fff;
+    }
+
+    .filter-btn.active {
+      background: rgba(229, 179, 88, 0.15);
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+      box-shadow: 0 0 12px rgba(229, 179, 88, 0.2);
+    }
+
+    /* Grid de Lanzamientos */
+    .catalog-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 2rem;
+    }
+
+    .release-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .release-card:hover {
+      border-color: var(--border-gold);
+      transform: translateY(-6px);
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.6);
+    }
+
+    .release-art-wrap {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background: #181820;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .vinyl-artwork {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      background-size: cover;
+      background-position: center;
+    }
+
+    /* Mockups de carátula estilizada en SVG / Gradiente */
+    .art-bg-1 { background: linear-gradient(135deg, #1f1124 0%, #3e1b4d 50%, #e5b358 100%); }
+    .art-bg-2 { background: linear-gradient(135deg, #0e1c26 0%, #17384a 50%, #44919b 100%); }
+    .art-bg-3 { background: linear-gradient(135deg, #24160d 0%, #4e2912 50%, #e5b358 100%); }
+    .art-bg-4 { background: linear-gradient(135deg, #15181e 0%, #202b38 50%, #90a4ae 100%); }
+
+    .vinyl-circle {
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #0e0e11 35%, #22222a 36%, #111116 55%, #2a2a35 56%, #0d0d12 70%);
+      box-shadow: 0 0 25px rgba(0,0,0,0.8), inset 0 0 8px rgba(0,0,0,0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: transform 0.6s ease;
+    }
+
+    .release-card:hover .vinyl-circle {
+      transform: rotate(45deg) scale(1.04);
+    }
+
+    .vinyl-center {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #0b0b0d;
+      font-family: 'Cinzel', serif;
+      font-size: 0.7rem;
+      font-weight: 800;
+    }
+
+    .play-overlay-btn {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+      color: #0b0b0d;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(229, 179, 88, 0.45);
+      transition: transform 0.2s, background 0.2s;
+      z-index: 4;
+    }
+
+    .play-overlay-btn:hover {
+      transform: scale(1.1);
+      background: var(--accent-gold-light);
+    }
+
+    .release-details {
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
+    }
+
+    .release-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.4rem;
+    }
+
+    .release-tag {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .release-year {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .release-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.2rem;
+    }
+
+    .release-artist {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    .release-actions {
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 0.75rem;
+    }
+
+    .streaming-links {
+      display: flex;
+      gap: 0.65rem;
+    }
+
+    .stream-icon {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .stream-icon:hover {
+      color: var(--accent-gold);
+    }
+
+    /* REPRODUCTOR FLOTANTE / STICKY AUDIO PLAYER */
+    .sticky-player {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(14, 14, 18, 0.95);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border-gold);
+      padding: 0.85rem 1.5rem;
+      z-index: 1000;
+      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+      max-width: 100vw;
+    }
+
+    .player-track-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      min-width: 200px;
+    }
+
+    .player-mini-cover {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      background: var(--accent-gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #0b0b0d;
+      font-weight: 800;
+      font-size: 0.8rem;
+    }
+
+    .player-track-title {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .player-track-sub {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .player-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex-grow: 1;
+      max-width: 600px;
+      gap: 0.35rem;
+    }
+
+    .player-buttons {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    .player-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      transition: color 0.2s;
+    }
+
+    .player-btn:hover {
+      color: #fff;
+    }
+
+    .player-btn-main {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+      color: #0b0b0d;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 12px var(--accent-gold-glow);
+    }
+
+    .player-btn-main:hover {
+      background: var(--accent-gold-light);
+    }
+
+    .player-progress-bar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .time-stamp {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      min-width: 32px;
+    }
+
+    .progress-track {
+      flex-grow: 1;
+      height: 4px;
+      background: #2a2a34;
+      border-radius: 2px;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 35%;
+      background: var(--accent-gold);
+      border-radius: 2px;
+      position: relative;
+      box-shadow: 0 0 8px var(--accent-gold-glow);
+    }
+
+    /* Waveform visualizer */
+    .waveform-visualizer {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 24px;
+      padding: 0 0.5rem;
+    }
+
+    .waveform-bar {
+      width: 3px;
+      height: 8px;
+      background: var(--accent-gold);
+      border-radius: 1px;
+      transition: height 0.15s ease;
+    }
+
+    .is-playing .waveform-bar {
+      animation: pulseWave 0.9s infinite ease-in-out alternate;
+    }
+
+    .is-playing .waveform-bar:nth-child(2) { animation-delay: 0.15s; }
+    .is-playing .waveform-bar:nth-child(3) { animation-delay: 0.3s; }
+    .is-playing .waveform-bar:nth-child(4) { animation-delay: 0.45s; }
+    .is-playing .waveform-bar:nth-child(5) { animation-delay: 0.2s; }
+    .is-playing .waveform-bar:nth-child(6) { animation-delay: 0.35s; }
+
+    @keyframes pulseWave {
+      0% { height: 6px; }
+      100% { height: 22px; }
+    }
+
     /* Features Grid */
     .features {
       max-width: 1140px;
@@ -178,6 +633,8 @@
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
       gap: 1.75rem;
+      position: relative;
+      z-index: 10;
     }
 
     .feature-card {
@@ -224,6 +681,8 @@
       border-radius: 20px;
       text-align: center;
       box-shadow: 0 15px 40px rgba(0, 0, 0, 0.5);
+      position: relative;
+      z-index: 10;
     }
 
     .demo-drop h2 {
@@ -245,6 +704,8 @@
       text-align: center;
       color: #6c6c78;
       font-size: 0.85rem;
+      position: relative;
+      z-index: 10;
     }
 
     footer a {
@@ -260,6 +721,18 @@
     @media (max-width: 768px) {
       .hero h1 { font-size: 2.25rem; }
       nav { display: none; }
+      .sticky-player {
+        flex-direction: column;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+      }
+      .player-track-info {
+        width: 100%;
+        justify-content: flex-start;
+      }
+      .waveform-visualizer {
+        display: none;
+      }
     }
   </style>
 </head>
@@ -271,10 +744,11 @@
       <span class="brand-name">EAJ MUSIC</span>
     </a>
     <nav>
-      <a href="#manifiesto">Manifiesto</a>
+      <a href="#catalogo">Catálogo</a>
       <a href="#circuito">Circuito 360°</a>
-      <a href="https://instagram.com/eajmusic_" target="_blank">@eajmusic_</a>
-      <a href="mailto:demo@eajmusic.com" class="btn-gold">Enviar Demo</a>
+      <a href="#demo">Enviar Demo</a>
+      <a href="https://instagram.com/eajmusic_" target="_blank" rel="noopener">@eajmusic_</a>
+      <a href="#demo" class="btn-gold">Subir Maqueta</a>
     </nav>
   </header>
 
@@ -283,11 +757,141 @@
       <div class="hero-eyebrow">Sello Discográfico Independiente</div>
       <h1>Sonido sin filtros.<br><span>De Puerto Rico para el mundo.</span></h1>
       <p>Respaldamos el talento puro de artistas independientes con producción de estándar global, narrativa visual cinematográfica y respeto total a su identidad.</p>
-      <div>
-        <a href="mailto:demo@eajmusic.com" class="btn-gold">Subir Maqueta</a>
+      <div class="hero-actions">
+        <a href="#catalogo" class="btn-gold">Explorar Catálogo</a>
+        <a href="#circuito" class="btn-outline">Conocer Circuito 360°</a>
       </div>
     </section>
 
+    <!-- SECCIÓN INTERACTIVA DEL CATÁLOGO MUSICAL -->
+    <section class="catalog-section" id="catalogo">
+      <div class="section-header">
+        <span class="section-badge">Discografía & Lanzamientos</span>
+        <h2>Catálogo de Sencillos & EPs</h2>
+        <p>Escucha las producciones oficiales del sello en calidad máster. Selecciona una pista para reproducir el preview.</p>
+      </div>
+
+      <!-- Filtros por Género / Formato -->
+      <div class="catalog-filters">
+        <button class="filter-btn active" data-filter="all">Todos los Lanzamientos</button>
+        <button class="filter-btn" data-filter="urbano">Urbano & Trap</button>
+        <button class="filter-btn" data-filter="indie">Indie Alternativo</button>
+        <button class="filter-btn" data-filter="ep">EPs & Álbumes</button>
+      </div>
+
+      <!-- Grid de Lanzamientos -->
+      <div class="catalog-grid" id="catalogGrid">
+        <!-- Track 1 -->
+        <article class="release-card" data-category="urbano" data-id="1" data-title="San Juan Nights" data-artist="Kaelo & EAJ Collective" data-bpm="115" data-duration="2:48">
+          <div class="release-art-wrap">
+            <div class="vinyl-artwork art-bg-1">
+              <div class="vinyl-circle">
+                <div class="vinyl-center">EAJ-1</div>
+              </div>
+            </div>
+            <button class="play-overlay-btn" title="Reproducir preview" onclick="playTrack(1)">▶</button>
+          </div>
+          <div class="release-details">
+            <div class="release-meta">
+              <span class="release-tag">Urbano / Neo-Perreo</span>
+              <span class="release-year">2026</span>
+            </div>
+            <h3 class="release-title">San Juan Nights</h3>
+            <p class="release-artist">Kaelo & EAJ Collective</p>
+            <div class="release-actions">
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Máster Final · 24-bit</span>
+              <div class="streaming-links">
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Distribution');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Distribution');">Apple</a>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Track 2 -->
+        <article class="release-card" data-category="urbano" data-id="2" data-title="Frecuencia Caribe" data-artist="Vlady Santos" data-bpm="128" data-duration="3:12">
+          <div class="release-art-wrap">
+            <div class="vinyl-artwork art-bg-2">
+              <div class="vinyl-circle">
+                <div class="vinyl-center">EAJ-2</div>
+              </div>
+            </div>
+            <button class="play-overlay-btn" title="Reproducir preview" onclick="playTrack(2)">▶</button>
+          </div>
+          <div class="release-details">
+            <div class="release-meta">
+              <span class="release-tag">Afro-Trap Caribeño</span>
+              <span class="release-year">2026</span>
+            </div>
+            <h3 class="release-title">Frecuencia Caribe</h3>
+            <p class="release-artist">Vlady Santos</p>
+            <div class="release-actions">
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Máster Final · Dolby Atmos</span>
+              <div class="streaming-links">
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Distribution');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Distribution');">Apple</a>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Track 3 -->
+        <article class="release-card" data-category="indie" data-id="3" data-title="Gravedad Cero" data-artist="Isla Sintética" data-bpm="98" data-duration="3:35">
+          <div class="release-art-wrap">
+            <div class="vinyl-artwork art-bg-3">
+              <div class="vinyl-circle">
+                <div class="vinyl-center">EAJ-3</div>
+              </div>
+            </div>
+            <button class="play-overlay-btn" title="Reproducir preview" onclick="playTrack(3)">▶</button>
+          </div>
+          <div class="release-details">
+            <div class="release-meta">
+              <span class="release-tag">Indie / Dream Pop</span>
+              <span class="release-year">2026</span>
+            </div>
+            <h3 class="release-title">Gravedad Cero</h3>
+            <p class="release-artist">Isla Sintética</p>
+            <div class="release-actions">
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Coproducción Empire Films</span>
+              <div class="streaming-links">
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Distribution');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Distribution');">Apple</a>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Track 4 -->
+        <article class="release-card" data-category="ep" data-id="4" data-title="Manifiesto EP" data-artist="Varios Artistas EAJ" data-bpm="120" data-duration="14:20">
+          <div class="release-art-wrap">
+            <div class="vinyl-artwork art-bg-4">
+              <div class="vinyl-circle">
+                <div class="vinyl-center">EP-1</div>
+              </div>
+            </div>
+            <button class="play-overlay-btn" title="Reproducir preview" onclick="playTrack(4)">▶</button>
+          </div>
+          <div class="release-details">
+            <div class="release-meta">
+              <span class="release-tag">EP Oficial / 4 Temas</span>
+              <span class="release-year">2026</span>
+            </div>
+            <h3 class="release-title">Manifiesto EP</h3>
+            <p class="release-artist">Varios Artistas EAJ</p>
+            <div class="release-actions">
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Edición Vinilo Limitada</span>
+              <div class="streaming-links">
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Distribution');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Distribution');">Apple</a>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- CIRCUITO 360° -->
     <section class="features" id="circuito">
       <div class="feature-card">
         <div class="feature-icon">🎚️</div>
@@ -308,16 +912,211 @@
       </div>
     </section>
 
-    <section class="demo-drop">
+    <!-- DEMO DROP -->
+    <section class="demo-drop" id="demo">
       <h2>¿Tienes un tema listo para el mundo?</h2>
       <p>Buscamos artistas y productores que desafíen los moldes. Envíanos tu maqueta directamente a nuestro equipo curatorial.</p>
-      <a href="mailto:demo@eajmusic.com" class="btn-gold">demo@eajmusic.com</a>
+      <a href="mailto:demo@eajmusic.com" class="btn-gold">Enviar Maqueta a demo@eajmusic.com</a>
     </section>
   </main>
 
+  <!-- REPRODUCTOR PERSISTENTE STICKY -->
+  <div class="sticky-player" id="stickyPlayer">
+    <div class="player-track-info">
+      <div class="player-mini-cover" id="playerBadge">EAJ</div>
+      <div>
+        <div class="player-track-title" id="playerTitle">San Juan Nights</div>
+        <div class="player-track-sub" id="playerArtist">Kaelo & EAJ Collective</div>
+      </div>
+    </div>
+
+    <div class="player-controls">
+      <div class="player-buttons">
+        <button class="player-btn" onclick="prevTrack()" title="Anterior">⏮</button>
+        <button class="player-btn-main" id="mainPlayBtn" onclick="togglePlay()" title="Play / Pause">▶</button>
+        <button class="player-btn" onclick="nextTrack()" title="Siguiente">⏭</button>
+      </div>
+      <div class="player-progress-bar">
+        <span class="time-stamp" id="currTime">0:12</span>
+        <div class="progress-track" onclick="seek(event)">
+          <div class="progress-fill" id="progressFill" style="width: 25%;"></div>
+        </div>
+        <span class="time-stamp" id="totalTime">2:48</span>
+      </div>
+    </div>
+
+    <div class="waveform-visualizer" id="waveformBox">
+      <div class="waveform-bar"></div>
+      <div class="waveform-bar"></div>
+      <div class="waveform-bar"></div>
+      <div class="waveform-bar"></div>
+      <div class="waveform-bar"></div>
+      <div class="waveform-bar"></div>
+    </div>
+  </div>
+
   <footer>
-    <p>© 2026 EAJ Music. Parte del conglomerado <a href="https://empireanimationsjoyful.com">Empire Animations Joyful</a> · <a href="https://distribution.empireanimationsjoyful.com">EAJ Distribution</a></p>
+    <p>© 2026 EAJ Music. Parte del conglomerado <a href="https://empireanimationsjoyful.com" target="_blank" rel="noopener">Empire Animations Joyful</a> · <a href="https://distribution.empireanimationsjoyful.com" target="_blank" rel="noopener">EAJ Distribution</a></p>
   </footer>
 
+  <!-- SCRIPT INTERACTIVO DEL CATÁLOGO & WEB AUDIO SYNTH PREVIEW -->
+  <script>
+    const tracks = [
+      { id: 1, title: 'San Juan Nights', artist: 'Kaelo & EAJ Collective', category: 'urbano', duration: '2:48', seconds: 168, freq: 220 },
+      { id: 2, title: 'Frecuencia Caribe', artist: 'Vlady Santos', category: 'urbano', duration: '3:12', seconds: 192, freq: 293.66 },
+      { id: 3, title: 'Gravedad Cero', artist: 'Isla Sintética', category: 'indie', duration: '3:35', seconds: 215, freq: 329.63 },
+      { id: 4, title: 'Manifiesto EP', artist: 'Varios Artistas EAJ', category: 'ep', duration: '14:20', seconds: 860, freq: 196 }
+    ];
+
+    let currentTrackIndex = 0;
+    let isPlaying = false;
+    let currentSeconds = 12;
+    let timerInterval = null;
+    let audioCtx = null;
+    let oscillator = null;
+    let gainNode = null;
+
+    // Inicializar sintetizador Web Audio para preview táctil y sonoro sin romper dependencias
+    function initAudio() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+      }
+    }
+
+    function startSynthPreview(freq) {
+      try {
+        initAudio();
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        stopSynthPreview();
+        oscillator = audioCtx.createOscillator();
+        gainNode = audioCtx.createGain();
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime); // Volumen sutil
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+      } catch (e) {
+        console.warn('Web Audio no disponible directamente sin interacción');
+      }
+    }
+
+    function stopSynthPreview() {
+      if (oscillator) {
+        try {
+          oscillator.stop();
+          oscillator.disconnect();
+        } catch(e) {}
+        oscillator = null;
+      }
+    }
+
+    function playTrack(id) {
+      const idx = tracks.findIndex(t => t.id === id);
+      if (idx !== -1) {
+        currentTrackIndex = idx;
+        currentSeconds = 0;
+        loadTrackInfo();
+        setPlayState(true);
+      }
+    }
+
+    function togglePlay() {
+      setPlayState(!isPlaying);
+    }
+
+    function setPlayState(play) {
+      isPlaying = play;
+      const playBtn = document.getElementById('mainPlayBtn');
+      const waveBox = document.getElementById('waveformBox');
+      
+      if (isPlaying) {
+        playBtn.innerText = '⏸';
+        waveBox.classList.add('is-playing');
+        startSynthPreview(tracks[currentTrackIndex].freq);
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+          currentSeconds++;
+          if (currentSeconds > tracks[currentTrackIndex].seconds) {
+            nextTrack();
+            return;
+          }
+          updateProgressUI();
+        }, 1000);
+      } else {
+        playBtn.innerText = '▶';
+        waveBox.classList.remove('is-playing');
+        stopSynthPreview();
+        clearInterval(timerInterval);
+      }
+    }
+
+    function nextTrack() {
+      currentTrackIndex = (currentTrackIndex + 1) % tracks.length;
+      currentSeconds = 0;
+      loadTrackInfo();
+      setPlayState(true);
+    }
+
+    function prevTrack() {
+      currentTrackIndex = (currentTrackIndex - 1 + tracks.length) % tracks.length;
+      currentSeconds = 0;
+      loadTrackInfo();
+      setPlayState(true);
+    }
+
+    function loadTrackInfo() {
+      const track = tracks[currentTrackIndex];
+      document.getElementById('playerTitle').innerText = track.title;
+      document.getElementById('playerArtist').innerText = track.artist;
+      document.getElementById('totalTime').innerText = track.duration;
+      document.getElementById('playerBadge').innerText = 'EAJ-' + track.id;
+      updateProgressUI();
+    }
+
+    function updateProgressUI() {
+      const track = tracks[currentTrackIndex];
+      const mins = Math.floor(currentSeconds / 60);
+      const secs = (currentSeconds % 60).toString().padStart(2, '0');
+      document.getElementById('currTime').innerText = `${mins}:${secs}`;
+      const percent = (currentSeconds / track.seconds) * 100;
+      document.getElementById('progressFill').style.width = `${percent}%`;
+    }
+
+    function seek(event) {
+      const bar = event.currentTarget;
+      const rect = bar.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+      currentSeconds = Math.floor(ratio * tracks[currentTrackIndex].seconds);
+      updateProgressUI();
+    }
+
+    // Filtrado de lanzamientos
+    const filterBtns = document.querySelectorAll('.filter-btn');
+    const cards = document.querySelectorAll('.release-card');
+
+    filterBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        filterBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const filter = btn.getAttribute('data-filter');
+
+        cards.forEach(card => {
+          if (filter === 'all' || card.getAttribute('data-category') === filter) {
+            card.style.display = 'flex';
+          } else {
+            card.style.display = 'none';
+          }
+        });
+      });
+    });
+
+    // Cargar pista inicial
+    loadTrackInfo();
+  </script>
 </body>
 </html>

@@ -1,0 +1,21 @@
+{
+  "name": "eajmusic-backend-api",
+  "version": "1.2.0",
+  "description": "Motor de API REST, Release Builder, Analíticas y Desembolso ATH Móvil de EAJMUSIC",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "cron:sync": "node --loader ts-node/esm src/cron/syncAmuseCron.ts || python3 integrations/amuse/sync_amuse_to_db.py --mock",
+    "test": "node --test test/*.test.js"
+  },
+  "keywords": [
+    "eajmusic",
+    "ath-movil",
+    "record-label",
+    "amuse-api",
+    "music-distribution"
+  ],
+  "author": "EAJMUSIC / CEO Ernesto",
+  "license": "UNLICENSED"
+}

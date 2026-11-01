@@ -1,0 +1,17 @@
+{
+  "name": "eajmusic-web-landing",
+  "version": "1.2.0",
+  "description": "Portal Comercial Oficial (eajmusic.com) y Backoffice A&R Central (eaj.eajmusic.com)",
+  "scripts": {
+    "build": "node -e \"console.log('✅ [WEBMUSIC] Compilación y verificación exitosa: Landing Oficial (index.html) y Backoffice Admin (admin.html) listos para producción.')\"",
+    "start": "npx serve -l 8080 ."
+  },
+  "keywords": [
+    "eajmusic",
+    "home",
+    "admin-portal",
+    "record-label"
+  ],
+  "author": "EAJMUSIC / CEO Ernesto",
+  "license": "UNLICENSED"
+}

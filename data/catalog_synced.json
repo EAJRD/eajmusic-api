@@ -1,0 +1,71 @@
+[
+  {
+    "id": "rel_amuse_001",
+    "title": "Neon Horizons",
+    "type": "single",
+    "upc": "7300012345678",
+    "status": "released",
+    "release_date": "2026-10-15",
+    "cover_art_url": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800",
+    "genre": "Synthwave / Cyberpunk",
+    "label_name": "EAJMUSIC Records",
+    "stores": {
+      "spotify": {
+        "url": "https://open.spotify.com/album/amuse_sample_1"
+      },
+      "apple_music": {
+        "url": "https://music.apple.com/album/amuse_sample_1"
+      }
+    },
+    "tracks": [
+      {
+        "id": "trk_amuse_101",
+        "title": "Neon Horizons (Original Mix)",
+        "isrc": "QZDA42600101",
+        "track_number": 1,
+        "duration_seconds": 214,
+        "preview_url": "https://p.scdn.co/mp3-preview/sample1",
+        "status": "ready"
+      }
+    ]
+  },
+  {
+    "id": "rel_amuse_002",
+    "title": "Midnight In San Juan",
+    "type": "ep",
+    "upc": "7300012345679",
+    "status": "released",
+    "release_date": "2026-09-20",
+    "cover_art_url": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800",
+    "genre": "Latin Urban / Afrobeat",
+    "label_name": "EAJMUSIC Records",
+    "stores": {
+      "spotify": {
+        "url": "https://open.spotify.com/album/amuse_sample_2"
+      },
+      "apple_music": {
+        "url": "https://music.apple.com/album/amuse_sample_2"
+      }
+    },
+    "tracks": [
+      {
+        "id": "trk_amuse_201",
+        "title": "Isla Verde Groove",
+        "isrc": "QZDA42600201",
+        "track_number": 1,
+        "duration_seconds": 185,
+        "preview_url": "https://p.scdn.co/mp3-preview/sample2",
+        "status": "ready"
+      },
+      {
+        "id": "trk_amuse_202",
+        "title": "Condado Nights",
+        "isrc": "QZDA42600202",
+        "track_number": 2,
+        "duration_seconds": 202,
+        "preview_url": "https://p.scdn.co/mp3-preview/sample3",
+        "status": "ready"
+      }
+    ]
+  }
+]

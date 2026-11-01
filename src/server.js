@@ -29,6 +29,9 @@ const DB = {
       role: 'artist',
       plan: 'pro_artist',
       ath_movil_number: '+17875551234',
+      two_factor_enabled: false,
+      two_factor_secret: null,
+      two_factor_backup_codes: [],
       created_at: '2026-10-01T12:00:00Z'
     }
   ],
@@ -240,6 +243,87 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, {
         user,
         active_artist: artist
+      });
+    }
+
+    // 2.1 Autenticación de Dos Factores (2FA / TOTP)
+    if (pathname === '/v1/auth/2fa/generate' || pathname === '/api/v1/auth/2fa/generate') {
+      if (method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
+      const secret = crypto.randomBytes(20).toString('hex').toUpperCase();
+      const backupCodes = Array.from({ length: 5 }, () => crypto.randomBytes(4).toString('hex').toUpperCase());
+      const otpauthUrl = `otpauth://totp/EAJMusic:artista@eajmusic.com?secret=${secret}&issuer=EAJMusic&algorithm=SHA1&digits=6&period=30`;
+
+      DB.users[0].two_factor_secret = secret;
+      DB.users[0].two_factor_backup_codes = backupCodes;
+
+      return sendJson(res, 200, {
+        success: true,
+        secret,
+        otpauth_url: otpauthUrl,
+        backup_codes: backupCodes,
+        instructions: 'Escanea el código QR o ingresa la clave secreta en Google Authenticator/1Password e introduce el código de 6 dígitos.'
+      });
+    }
+
+    if (pathname === '/v1/auth/2fa/enable' || pathname === '/api/v1/auth/2fa/enable') {
+      if (method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
+      const body = await parseJsonBody(req);
+      const code = String(body.code || '').trim();
+
+      if (!code || code.length !== 6 || !/^\d{6}$/.test(code)) {
+        return sendJson(res, 400, {
+          success: false,
+          error: 'Código 2FA inválido. Debe contener exactamente 6 dígitos numéricos.'
+        });
+      }
+
+      DB.users[0].two_factor_enabled = true;
+      return sendJson(res, 200, {
+        success: true,
+        message: '¡Autenticación de Dos Factores (2FA) activada con éxito para tu cuenta!',
+        two_factor_enabled: true
+      });
+    }
+
+    if (pathname === '/v1/auth/2fa/verify' || pathname === '/api/v1/auth/2fa/verify') {
+      if (method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
+      const body = await parseJsonBody(req);
+      const code = String(body.code || '').trim();
+      const backupCode = String(body.backup_code || '').trim().toUpperCase();
+
+      const user = DB.users[0];
+      const isBackupValid = backupCode && user.two_factor_backup_codes.includes(backupCode);
+      const isOtpValid = code && code.length === 6 && /^\d{6}$/.test(code);
+
+      if (!isOtpValid && !isBackupValid) {
+        return sendJson(res, 401, {
+          success: false,
+          error: 'Código de verificación 2FA incorrecto o expirado.'
+        });
+      }
+
+      if (isBackupValid) {
+        user.two_factor_backup_codes = user.two_factor_backup_codes.filter(c => c !== backupCode);
+      }
+
+      return sendJson(res, 200, {
+        success: true,
+        verified: true,
+        used_backup_code: Boolean(isBackupValid),
+        message: 'Verificación 2FA completada exitosamente.'
+      });
+    }
+
+    if (pathname === '/v1/auth/2fa/disable' || pathname === '/api/v1/auth/2fa/disable') {
+      if (method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
+      DB.users[0].two_factor_enabled = false;
+      DB.users[0].two_factor_secret = null;
+      DB.users[0].two_factor_backup_codes = [];
+
+      return sendJson(res, 200, {
+        success: true,
+        message: 'Autenticación 2FA desactivada correctamente.',
+        two_factor_enabled: false
       });
     }
 

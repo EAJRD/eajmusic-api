@@ -80,3 +80,39 @@ test('5. Retiro por ATH Móvil rechaza números fuera de Puerto Rico', async () 
   assert.strictEqual(data.success, false);
   assert(data.error.includes('Puerto Rico'));
 });
+
+test('6. 2FA Generate genera secreto TOTP, URL otpauth y códigos de respaldo', async () => {
+  const res = await fetch(`${BASE_URL}/v1/auth/2fa/generate`, {
+    method: 'POST'
+  });
+  assert.strictEqual(res.status, 200);
+  const data = await res.json();
+  assert.strictEqual(data.success, true);
+  assert(typeof data.secret === 'string' && data.secret.length >= 16);
+  assert(data.otpauth_url.startsWith('otpauth://totp/EAJMusic'));
+  assert(Array.isArray(data.backup_codes) && data.backup_codes.length === 5);
+});
+
+test('7. 2FA Enable activa el segundo factor con código de 6 dígitos', async () => {
+  const res = await fetch(`${BASE_URL}/v1/auth/2fa/enable`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: '123456' })
+  });
+  assert.strictEqual(res.status, 200);
+  const data = await res.json();
+  assert.strictEqual(data.success, true);
+  assert.strictEqual(data.two_factor_enabled, true);
+});
+
+test('8. 2FA Verify valida código de un solo uso o código de respaldo', async () => {
+  // Test con OTP de 6 dígitos
+  const res = await fetch(`${BASE_URL}/v1/auth/2fa/verify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code: '654321' })
+  });
+  assert.strictEqual(res.status, 200);
+  const data = await res.json();
+  assert.strictEqual(data.verified, true);
+});

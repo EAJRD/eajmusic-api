@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EAJ Music — Sello Discográfico Independiente</title>
-  <meta name="description" content="Sello discográfico independiente de Puerto Rico para el mundo. Catálogo interactivo, lanzamientos y desarrollo de artistas independientes.">
+  <title>EAJ Music — Tu catálogo, en tu bolsillo | Distribución con ATH Móvil</title>
+  <meta name="description" content="Sello y distribuidora musical independiente de Puerto Rico. 100% de tus regalías, subidas ilimitadas y retiros directos por ATH Móvil. Accede a tu dashboard en app.eajmusic.com.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg-black: #0b0b0d;
@@ -16,10 +16,13 @@
       --accent-gold: #e5b358;
       --accent-gold-light: #f3cf88;
       --accent-gold-glow: rgba(229, 179, 88, 0.28);
+      --ath-orange: #ff5000;
+      --ath-orange-glow: rgba(255, 80, 0, 0.25);
       --border-subtle: #24242c;
       --border-gold: rgba(229, 179, 88, 0.4);
       --text-main: #f4f4f6;
       --text-muted: #9595a2;
+      --green-highlight: #22c55e;
     }
 
     * {
@@ -36,7 +39,7 @@
       line-height: 1.6;
       overflow-x: hidden;
       position: relative;
-      padding-bottom: 90px; /* Espacio para el reproductor persistente */
+      padding-bottom: 90px;
     }
 
     /* Textura de vinilo y micrograno analógico */
@@ -54,9 +57,9 @@
     /* Header Nav */
     header {
       width: 100%;
-      max-width: 1140px;
+      max-width: 1180px;
       margin: 0 auto;
-      padding: 1.75rem 1.5rem;
+      padding: 1.5rem 1.5rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -87,23 +90,6 @@
       color: var(--accent-gold);
       font-size: 1.05rem;
       position: relative;
-      overflow: hidden;
-    }
-
-    .logo-badge::after {
-      content: "";
-      position: absolute;
-      width: 100%;
-      height: 2px;
-      background: var(--accent-gold);
-      opacity: 0.7;
-      animation: sweep 3s infinite linear;
-    }
-
-    @keyframes sweep {
-      0% { transform: translateY(-20px); opacity: 0; }
-      50% { opacity: 0.8; }
-      100% { transform: translateY(20px); opacity: 0; }
     }
 
     .brand-name {
@@ -115,20 +101,26 @@
 
     nav {
       display: flex;
-      gap: 1.75rem;
+      gap: 1.5rem;
       align-items: center;
     }
 
     nav a {
       color: var(--text-muted);
       text-decoration: none;
-      font-size: 0.9rem;
+      font-size: 0.88rem;
       font-weight: 500;
       transition: color 0.2s;
     }
 
     nav a:hover {
       color: var(--accent-gold);
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 0.85rem;
+      align-items: center;
     }
 
     .btn-gold {
@@ -150,6 +142,27 @@
       box-shadow: 0 6px 20px rgba(229, 179, 88, 0.4);
     }
 
+    .btn-dashboard {
+      background: #181820;
+      color: #fff;
+      border: 1px solid var(--border-gold);
+      padding: 0.55rem 1.25rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.86rem;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      transition: all 0.2s;
+    }
+
+    .btn-dashboard:hover {
+      background: rgba(229, 179, 88, 0.15);
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
     /* Hero Section */
     .hero {
       max-width: 1140px;
@@ -161,21 +174,32 @@
     }
 
     .hero-eyebrow {
-      display: inline-block;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
       text-transform: uppercase;
-      font-size: 0.8rem;
+      font-size: 0.78rem;
       font-weight: 700;
-      letter-spacing: 2.5px;
+      letter-spacing: 2px;
       color: var(--accent-gold);
       background: rgba(229, 179, 88, 0.1);
       border: 1px solid rgba(229, 179, 88, 0.25);
-      padding: 0.35rem 1rem;
+      padding: 0.4rem 1.15rem;
       border-radius: 30px;
       margin-bottom: 1.5rem;
     }
 
+    .hero-eyebrow .badge-tag {
+      background: var(--ath-orange);
+      color: #fff;
+      font-size: 0.65rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 10px;
+      letter-spacing: 1px;
+    }
+
     .hero h1 {
-      font-size: 3.25rem;
+      font-size: 3.4rem;
       font-weight: 800;
       letter-spacing: -0.5px;
       line-height: 1.15;
@@ -183,7 +207,7 @@
     }
 
     .hero h1 span {
-      background: linear-gradient(135deg, #ffffff 40%, var(--accent-gold) 100%);
+      background: linear-gradient(135deg, #ffffff 30%, var(--accent-gold) 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -191,8 +215,29 @@
     .hero p {
       font-size: 1.15rem;
       color: var(--text-muted);
-      max-width: 680px;
+      max-width: 720px;
       margin: 0 auto 2.5rem;
+    }
+
+    .hero-highlights {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .highlight-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      color: #e2e2e8;
+    }
+
+    .highlight-icon {
+      color: var(--green-highlight);
+      font-weight: bold;
     }
 
     .hero-actions {
@@ -217,6 +262,212 @@
     .btn-outline:hover {
       border-color: var(--accent-gold);
       color: var(--accent-gold);
+    }
+
+    /* SECCIÓN ATH MÓVIL BANNER */
+    .ath-feature-banner {
+      max-width: 1140px;
+      margin: 0 auto 6rem;
+      padding: 2.5rem;
+      background: radial-gradient(circle at top right, rgba(255, 80, 0, 0.12), rgba(18, 18, 24, 0.95));
+      border: 1px solid rgba(255, 80, 0, 0.35);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 2rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      position: relative;
+      z-index: 10;
+    }
+
+    .ath-text h2 {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+    }
+
+    .ath-text h2 span {
+      color: #ff7733;
+    }
+
+    .ath-text p {
+      color: var(--text-muted);
+      max-width: 620px;
+      font-size: 0.95rem;
+    }
+
+    .ath-pill-box {
+      background: #111116;
+      border: 1px solid rgba(255, 80, 0, 0.4);
+      padding: 1.25rem 1.75rem;
+      border-radius: 14px;
+      text-align: center;
+      min-width: 240px;
+    }
+
+    .ath-pill-box .tag {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--ath-orange);
+      letter-spacing: 1.5px;
+    }
+
+    .ath-pill-box .value {
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: #fff;
+      margin: 0.25rem 0;
+    }
+
+    .ath-pill-box .desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* SECCIÓN DE PLANES Y PRECIOS */
+    .pricing-section {
+      max-width: 1140px;
+      margin: 0 auto 6rem;
+      padding: 0 1.5rem;
+      position: relative;
+      z-index: 10;
+    }
+
+    .pricing-header {
+      text-align: center;
+      margin-bottom: 3.5rem;
+    }
+
+    .pricing-badge {
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--accent-gold);
+      margin-bottom: 0.5rem;
+      display: inline-block;
+    }
+
+    .pricing-header h2 {
+      font-size: 2.3rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      align-items: stretch;
+    }
+
+    .pricing-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 18px;
+      padding: 2.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    .pricing-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.7);
+    }
+
+    .pricing-card.featured {
+      background: radial-gradient(circle at top right, #221e16, var(--bg-surface));
+      border: 1.5px solid var(--accent-gold);
+      box-shadow: 0 0 30px rgba(229, 179, 88, 0.2);
+    }
+
+    .popular-tag {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent-gold);
+      color: #0b0b0d;
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      padding: 0.25rem 1rem;
+      border-radius: 20px;
+    }
+
+    .plan-name {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+
+    .plan-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+      min-height: 42px;
+    }
+
+    .plan-price {
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .plan-price .currency {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--accent-gold);
+    }
+
+    .plan-price .amount {
+      font-size: 3rem;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1;
+    }
+
+    .plan-price .period {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .plan-features {
+      list-style: none;
+      margin-bottom: 2rem;
+      flex-grow: 1;
+    }
+
+    .plan-features li {
+      font-size: 0.9rem;
+      color: #cfcfe0;
+      margin-bottom: 0.85rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+    }
+
+    .plan-features li::before {
+      content: "✓";
+      color: var(--accent-gold);
+      font-weight: 800;
+    }
+
+    .plan-features li.ath-feature {
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .plan-features li.ath-feature::before {
+      content: "⚡";
+      color: var(--ath-orange);
     }
 
     /* SECCIÓN CATÁLOGO MUSICAL INTERACTIVO */
@@ -257,7 +508,6 @@
       margin: 0 auto;
     }
 
-    /* Filtros del Catálogo */
     .catalog-filters {
       display: flex;
       justify-content: center;
@@ -290,7 +540,6 @@
       box-shadow: 0 0 12px rgba(229, 179, 88, 0.2);
     }
 
-    /* Grid de Lanzamientos */
     .catalog-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -336,7 +585,6 @@
       background-position: center;
     }
 
-    /* Mockups de carátula estilizada en SVG / Gradiente */
     .art-bg-1 { background: linear-gradient(135deg, #1f1124 0%, #3e1b4d 50%, #e5b358 100%); }
     .art-bg-2 { background: linear-gradient(135deg, #0e1c26 0%, #17384a 50%, #44919b 100%); }
     .art-bg-3 { background: linear-gradient(135deg, #24160d 0%, #4e2912 50%, #e5b358 100%); }
@@ -593,7 +841,6 @@
       box-shadow: 0 0 8px var(--accent-gold-glow);
     }
 
-    /* Waveform visualizer */
     .waveform-visualizer {
       display: flex;
       align-items: center;
@@ -721,6 +968,10 @@
     @media (max-width: 768px) {
       .hero h1 { font-size: 2.25rem; }
       nav { display: none; }
+      .ath-feature-banner {
+        flex-direction: column;
+        text-align: center;
+      }
       .sticky-player {
         flex-direction: column;
         gap: 0.75rem;
@@ -744,22 +995,125 @@
       <span class="brand-name">EAJ MUSIC</span>
     </a>
     <nav>
+      <a href="#ath-movil">ATH Móvil 🇵🇷</a>
+      <a href="#planes">Planes</a>
       <a href="#catalogo">Catálogo</a>
       <a href="#circuito">Circuito 360°</a>
-      <a href="#demo">Enviar Demo</a>
       <a href="https://instagram.com/eajmusic_" target="_blank" rel="noopener">@eajmusic_</a>
-      <a href="#demo" class="btn-gold">Subir Maqueta</a>
     </nav>
+    <div class="nav-actions">
+      <a href="https://app.eajmusic.com/dashboard" class="btn-dashboard">
+        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;"></span>
+        Dashboard
+      </a>
+      <a href="#planes" class="btn-gold">Comenzar</a>
+    </div>
   </header>
 
   <main>
+    <!-- HERO SECTION ACTUALIZADA -->
     <section class="hero">
-      <div class="hero-eyebrow">Sello Discográfico Independiente</div>
-      <h1>Sonido sin filtros.<br><span>De Puerto Rico para el mundo.</span></h1>
-      <p>Respaldamos el talento puro de artistas independientes con producción de estándar global, narrativa visual cinematográfica y respeto total a su identidad.</p>
+      <div class="hero-eyebrow">
+        <span>Tu catálogo, en tu bolsillo</span>
+        <span class="badge-tag">ATH MÓVIL DIRECTO</span>
+      </div>
+      <h1>Lanza tu música al mundo.<br><span>Cobra tus regalías directo por ATH Móvil.</span></h1>
+      <p>La plataforma discográfica y de distribución para artistas independientes en Puerto Rico. 100% de tus regalías, sin comisiones ocultas y con retiro instantáneo en tu cuenta local.</p>
+      
+      <div class="hero-highlights">
+        <div class="highlight-item"><span class="highlight-icon">✓</span> 100% de tus Regalías Fonográficas</div>
+        <div class="highlight-item"><span class="highlight-icon">✓</span> Retiro Express por ATH Móvil</div>
+        <div class="highlight-item"><span class="highlight-icon">✓</span> Distribución Global en +150 Tiendas</div>
+        <div class="highlight-item"><span class="highlight-icon">✓</span> Dashboard en Tiempo Real</div>
+      </div>
+
       <div class="hero-actions">
-        <a href="#catalogo" class="btn-gold">Explorar Catálogo</a>
-        <a href="#circuito" class="btn-outline">Conocer Circuito 360°</a>
+        <a href="https://app.eajmusic.com/dashboard" class="btn-gold">Acceder al Dashboard</a>
+        <a href="#planes" class="btn-outline">Ver Planes desde $0</a>
+      </div>
+    </section>
+
+    <!-- BANNER DESTACADO DE INTEGRACIÓN ATH MÓVIL -->
+    <section class="ath-feature-banner" id="ath-movil">
+      <div class="ath-text">
+        <h2>El puente financiero que faltaba: <span>Retiro por ATH Móvil</span></h2>
+        <p>Se acabó esperar semanas o pagar altas comisiones por transferencias bancarias internacionales. Con EAJ Music, tus ingresos de streaming en Spotify, Apple Music, TikTok y YouTube se transfieren directamente a tu número de ATH Móvil en Puerto Rico con un solo clic.</p>
+      </div>
+      <div class="ath-pill-box">
+        <div class="tag">Comisión por Retiro</div>
+        <div class="value">0%</div>
+        <div class="desc">Tus regalías completas en tu bolsillo</div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN DE PLANES Y PRECIOS -->
+    <section class="pricing-section" id="planes">
+      <div class="pricing-header">
+        <span class="pricing-badge">Precios Claros y Accesibles</span>
+        <h2>Elige el plan para tu carrera musical</h2>
+        <p>Desde tu primera maqueta hasta el catálogo de un sello independiente completo.</p>
+      </div>
+
+      <div class="pricing-grid">
+        <!-- PLAN FREE -->
+        <div class="pricing-card">
+          <h3 class="plan-name">Free</h3>
+          <p class="plan-desc">Ideal para lanzar tu primer tema y familiarizarte con el ecosistema.</p>
+          <div class="plan-price">
+            <span class="currency">$</span>
+            <span class="amount">0</span>
+            <span class="period">/siempre</span>
+          </div>
+          <ul class="plan-features">
+            <li>1 Artista principal</li>
+            <li>Distribución a Spotify y Apple Music</li>
+            <li>100% de regalías fonográficas</li>
+            <li>Acceso a app.eajmusic.com/dashboard</li>
+            <li>Códigos UPC/ISRC incluidos</li>
+          </ul>
+          <a href="https://app.eajmusic.com/dashboard" class="btn-outline" style="text-align:center;">Crear Cuenta Gratis</a>
+        </div>
+
+        <!-- PLAN PRO ARTIST (DESTACADO) -->
+        <div class="pricing-card featured">
+          <div class="popular-tag">Más Popular</div>
+          <h3 class="plan-name">Pro Artist</h3>
+          <p class="plan-desc">El estándar profesional para músicos y creadores activos en Puerto Rico.</p>
+          <div class="plan-price">
+            <span class="currency">$</span>
+            <span class="amount">19.99</span>
+            <span class="period">/año</span>
+          </div>
+          <ul class="plan-features">
+            <li class="ath-feature">Retiro directo express por ATH Móvil</li>
+            <li>Lanzamientos ilimitados (Singles, EPs, Álbumes)</li>
+            <li>100% de regalías sin retención de comisiones</li>
+            <li>Distribución a +150 plataformas (TikTok, Meta, IG)</li>
+            <li>Letras sincronizadas y fecha de lanzamiento fijada</li>
+            <li>Soporte de máster y distribución prioritaria</li>
+          </ul>
+          <a href="https://app.eajmusic.com/dashboard" class="btn-gold" style="text-align:center;">Activar Pro Artist</a>
+        </div>
+
+        <!-- PLAN LABEL PLUS -->
+        <div class="pricing-card">
+          <h3 class="plan-name">Label Plus</h3>
+          <p class="plan-desc">Para colectivos, estudios de producción y sellos independientes en expansión.</p>
+          <div class="plan-price">
+            <span class="currency">$</span>
+            <span class="amount">49.99</span>
+            <span class="period">/año</span>
+          </div>
+          <ul class="plan-features">
+            <li class="ath-feature">Retiros ilimitados por ATH Móvil & ACH</li>
+            <li>Hasta 5 artistas o colectivos bajo una misma cuenta</li>
+            <li>División automática de regalías (Payment Splits)</li>
+            <li>Códigos ISRC personalizados con sello propio</li>
+            <li>Acceso directo al circuito de video con Empire Animations</li>
+            <li>Gestor de cuenta y soporte VIP prioritario</li>
+          </ul>
+          <a href="https://app.eajmusic.com/dashboard" class="btn-outline" style="text-align:center;">Comenzar Label Plus</a>
+        </div>
       </div>
     </section>
 
@@ -768,7 +1122,7 @@
       <div class="section-header">
         <span class="section-badge">Discografía & Lanzamientos</span>
         <h2>Catálogo de Sencillos & EPs</h2>
-        <p>Escucha las producciones oficiales del sello en calidad máster. Selecciona una pista para reproducir el preview.</p>
+        <p>Escucha las producciones distribuidas por EAJ Music. Haz clic para reproducir el preview.</p>
       </div>
 
       <!-- Filtros por Género / Formato -->
@@ -799,10 +1153,10 @@
             <h3 class="release-title">San Juan Nights</h3>
             <p class="release-artist">Kaelo & EAJ Collective</p>
             <div class="release-actions">
-              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Máster Final · 24-bit</span>
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Plan Pro Artist · 24-bit</span>
               <div class="streaming-links">
-                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Distribution');">Spotify</a>
-                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Distribution');">Apple</a>
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Music');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Music');">Apple</a>
               </div>
             </div>
           </div>
@@ -826,10 +1180,10 @@
             <h3 class="release-title">Frecuencia Caribe</h3>
             <p class="release-artist">Vlady Santos</p>
             <div class="release-actions">
-              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Máster Final · Dolby Atmos</span>
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Dolby Atmos Master</span>
               <div class="streaming-links">
-                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Distribution');">Spotify</a>
-                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Distribution');">Apple</a>
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Music');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Music');">Apple</a>
               </div>
             </div>
           </div>
@@ -855,8 +1209,8 @@
             <div class="release-actions">
               <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Coproducción Empire Films</span>
               <div class="streaming-links">
-                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Distribution');">Spotify</a>
-                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Distribution');">Apple</a>
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Music');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Music');">Apple</a>
               </div>
             </div>
           </div>
@@ -880,10 +1234,10 @@
             <h3 class="release-title">Manifiesto EP</h3>
             <p class="release-artist">Varios Artistas EAJ</p>
             <div class="release-actions">
-              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Edición Vinilo Limitada</span>
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Label Plus Release</span>
               <div class="streaming-links">
-                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Distribution');">Spotify</a>
-                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Distribution');">Apple</a>
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Music');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Music');">Apple</a>
               </div>
             </div>
           </div>
@@ -894,29 +1248,32 @@
     <!-- CIRCUITO 360° -->
     <section class="features" id="circuito">
       <div class="feature-card">
-        <div class="feature-icon">🎚️</div>
-        <h3>Desarrollo & Producción</h3>
-        <p>Acompañamiento en arreglos, diseño sonoro, mezcla y masterización con pegada de élite para plataformas de streaming.</p>
+        <div class="feature-icon">📲</div>
+        <h3>Tu catálogo, en tu bolsillo</h3>
+        <p>Monitorea reproducciones diarias, ingresos devengados y fechas de cobro desde app.eajmusic.com/dashboard en tiempo real.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🇵🇷</div>
+        <h3>Retiro Directo por ATH Móvil</h3>
+        <p>Cero intermediarios internacionales ni trabas bancarias. Transfiere tus regalías a tu cuenta en Puerto Rico al instante.</p>
       </div>
 
       <div class="feature-card">
         <div class="feature-icon">🎬</div>
-        <h3>Mundo Visual con Empire</h3>
-        <p>Integración directa con Empire Animations Joyful para rodar videos musicales cinematográficos que eleven cada sencillo.</p>
-      </div>
-
-      <div class="feature-card">
-        <div class="feature-icon">🌐</div>
-        <h3>Distribución & Publishing</h3>
-        <p>Estrategia de lanzamiento global, posicionamiento en playlists curatoriales y protección de tus regalías y catálogo.</p>
+        <h3>Ecosistema Audiovisual Empire</h3>
+        <p>Conecta tu música con producción de videoclips de cine de la mano de Empire Animations Joyful y distribución a festivales.</p>
       </div>
     </section>
 
     <!-- DEMO DROP -->
     <section class="demo-drop" id="demo">
-      <h2>¿Tienes un tema listo para el mundo?</h2>
-      <p>Buscamos artistas y productores que desafíen los moldes. Envíanos tu maqueta directamente a nuestro equipo curatorial.</p>
-      <a href="mailto:demo@eajmusic.com" class="btn-gold">Enviar Maqueta a demo@eajmusic.com</a>
+      <h2>¿Tienes un proyecto listo para despegar?</h2>
+      <p>Crea tu cuenta en el dashboard oficial o envía tu maqueta para ser considerado por nuestro sello discográfico.</p>
+      <div style="display:flex; justify-content:center; gap:1rem; flex-wrap:wrap;">
+        <a href="https://app.eajmusic.com/dashboard" class="btn-gold">Entrar a app.eajmusic.com/dashboard</a>
+        <a href="mailto:demo@eajmusic.com" class="btn-outline">Enviar Maqueta (demo@eajmusic.com)</a>
+      </div>
     </section>
   </main>
 
@@ -956,7 +1313,7 @@
   </div>
 
   <footer>
-    <p>© 2026 EAJ Music. Parte del conglomerado <a href="https://empireanimationsjoyful.com" target="_blank" rel="noopener">Empire Animations Joyful</a> · <a href="https://distribution.empireanimationsjoyful.com" target="_blank" rel="noopener">EAJ Distribution</a></p>
+    <p>© 2026 EAJ Music. Dominio oficial <a href="https://eajmusic.com">Eajmusic.com</a> · Plataforma <a href="https://app.eajmusic.com/dashboard">app.eajmusic.com</a> · Con el respaldo de <a href="https://empireanimationsjoyful.com" target="_blank" rel="noopener">Empire Animations Joyful</a></p>
   </footer>
 
   <!-- SCRIPT INTERACTIVO DEL CATÁLOGO & WEB AUDIO SYNTH PREVIEW -->
@@ -976,7 +1333,6 @@
     let oscillator = null;
     let gainNode = null;
 
-    // Inicializar sintetizador Web Audio para preview táctil y sonoro sin romper dependencias
     function initAudio() {
       if (!audioCtx) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -995,12 +1351,12 @@
         gainNode = audioCtx.createGain();
         oscillator.type = 'triangle';
         oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime); // Volumen sutil
+        gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime);
         oscillator.connect(gainNode);
         gainNode.connect(audioCtx.destination);
         oscillator.start();
       } catch (e) {
-        console.warn('Web Audio no disponible directamente sin interacción');
+        console.warn('Web Audio no disponible directamente sin interacción previa');
       }
     }
 
@@ -1095,7 +1451,6 @@
       updateProgressUI();
     }
 
-    // Filtrado de lanzamientos
     const filterBtns = document.querySelectorAll('.filter-btn');
     const cards = document.querySelectorAll('.release-card');
 
@@ -1115,7 +1470,6 @@
       });
     });
 
-    // Cargar pista inicial
     loadTrackInfo();
   </script>
 </body>

@@ -2,13 +2,16 @@
   {
     "id": "rel_amuse_001",
     "title": "Neon Horizons",
+    "artist": "Kaelo & EAJ Collective",
     "type": "single",
     "upc": "7300012345678",
     "status": "released",
     "release_date": "2026-10-15",
     "cover_art_url": "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800",
     "genre": "Synthwave / Cyberpunk",
+    "category": "indie",
     "label_name": "EAJMUSIC Records",
+    "plan": "Pro Artist",
     "stores": {
       "spotify": {
         "url": "https://open.spotify.com/album/amuse_sample_1"
@@ -24,7 +27,8 @@
         "isrc": "QZDA42600101",
         "track_number": 1,
         "duration_seconds": 214,
-        "preview_url": "https://p.scdn.co/mp3-preview/sample1",
+        "preview_url": "https://cdn.freesound.org/previews/612/612610_5674468-lq.mp3",
+        "freq": 220,
         "status": "ready"
       }
     ]
@@ -32,13 +36,16 @@
   {
     "id": "rel_amuse_002",
     "title": "Midnight In San Juan",
+    "artist": "Vlady Santos",
     "type": "ep",
     "upc": "7300012345679",
     "status": "released",
     "release_date": "2026-09-20",
     "cover_art_url": "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800",
     "genre": "Latin Urban / Afrobeat",
+    "category": "urbano",
     "label_name": "EAJMUSIC Records",
+    "plan": "Label Plus",
     "stores": {
       "spotify": {
         "url": "https://open.spotify.com/album/amuse_sample_2"
@@ -54,7 +61,8 @@
         "isrc": "QZDA42600201",
         "track_number": 1,
         "duration_seconds": 185,
-        "preview_url": "https://p.scdn.co/mp3-preview/sample2",
+        "preview_url": "https://cdn.freesound.org/previews/567/567280_1648170-lq.mp3",
+        "freq": 293.66,
         "status": "ready"
       },
       {
@@ -63,7 +71,76 @@
         "isrc": "QZDA42600202",
         "track_number": 2,
         "duration_seconds": 202,
-        "preview_url": "https://p.scdn.co/mp3-preview/sample3",
+        "preview_url": "https://cdn.freesound.org/previews/450/450622_5121236-lq.mp3",
+        "freq": 261.63,
+        "status": "ready"
+      }
+    ]
+  },
+  {
+    "id": "rel_amuse_003",
+    "title": "Gravedad Cero",
+    "artist": "Isla Sintética",
+    "type": "single",
+    "upc": "7300012345680",
+    "status": "released",
+    "release_date": "2026-10-01",
+    "cover_art_url": "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800",
+    "genre": "Indie / Dream Pop",
+    "category": "indie",
+    "label_name": "EAJMUSIC Records",
+    "plan": "Pro Artist",
+    "stores": {
+      "spotify": {
+        "url": "https://open.spotify.com/album/amuse_sample_3"
+      },
+      "apple_music": {
+        "url": "https://music.apple.com/album/amuse_sample_3"
+      }
+    },
+    "tracks": [
+      {
+        "id": "trk_amuse_301",
+        "title": "Gravedad Cero",
+        "isrc": "QZDA42600301",
+        "track_number": 1,
+        "duration_seconds": 215,
+        "preview_url": "https://cdn.freesound.org/previews/511/511874_11222409-lq.mp3",
+        "freq": 329.63,
+        "status": "ready"
+      }
+    ]
+  },
+  {
+    "id": "rel_amuse_004",
+    "title": "Frecuencia Caribe",
+    "artist": "Vlady Santos",
+    "type": "single",
+    "upc": "7300012345681",
+    "status": "released",
+    "release_date": "2026-08-14",
+    "cover_art_url": "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800",
+    "genre": "Afro-Trap Caribeño",
+    "category": "urbano",
+    "label_name": "EAJMUSIC Records",
+    "plan": "Pro Artist",
+    "stores": {
+      "spotify": {
+        "url": "https://open.spotify.com/album/amuse_sample_4"
+      },
+      "apple_music": {
+        "url": "https://music.apple.com/album/amuse_sample_4"
+      }
+    },
+    "tracks": [
+      {
+        "id": "trk_amuse_401",
+        "title": "Frecuencia Caribe (Master Final)",
+        "isrc": "QZDA42600401",
+        "track_number": 1,
+        "duration_seconds": 192,
+        "preview_url": "https://cdn.freesound.org/previews/415/415994_5121236-lq.mp3",
+        "freq": 349.23,
         "status": "ready"
       }
     ]

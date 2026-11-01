@@ -1318,24 +1318,88 @@
     <p>© 2026 EAJ Music. Portal oficial <a href="https://eajmusic.com">Eajmusic.com</a> · Portal del Artista <a href="https://artist.eajmusic.com">artist.eajmusic.com</a> · Backoffice Sello <a href="https://eaj.eajmusic.com">eaj.eajmusic.com</a> · Respaldado por <a href="https://empireanimationsjoyful.com" target="_blank" rel="noopener">Empire Animations Joyful</a></p>
   </footer>
 
-  <!-- SCRIPT INTERACTIVO DEL CATÁLOGO & WEB AUDIO SYNTH PREVIEW -->
+  <!-- AUDIO ELEMENT NATIVO PARA PREVIEWS REALES -->
+  <audio id="nativeAudioPlayer" preload="none"></audio>
+
+  <!-- SCRIPT INTERACTIVO DEL CATÁLOGO & PREVIEW ENGINE -->
   <script>
-    const tracks = [
-      { id: 1, title: 'San Juan Nights', artist: 'Kaelo & EAJ Collective', category: 'urbano', duration: '2:48', seconds: 168, freq: 220 },
-      { id: 2, title: 'Frecuencia Caribe', artist: 'Vlady Santos', category: 'urbano', duration: '3:12', seconds: 192, freq: 293.66 },
-      { id: 3, title: 'Gravedad Cero', artist: 'Isla Sintética', category: 'indie', duration: '3:35', seconds: 215, freq: 329.63 },
-      { id: 4, title: 'Manifiesto EP', artist: 'Varios Artistas EAJ', category: 'ep', duration: '14:20', seconds: 860, freq: 196 }
+    // Colección de pistas normalizadas (cargadas dinámicamente desde data/catalog_synced.json)
+    let catalogReleases = [];
+    let playableTracks = [
+      {
+        id: "trk_amuse_101",
+        releaseId: "rel_amuse_001",
+        title: "Neon Horizons (Original Mix)",
+        artist: "Kaelo & EAJ Collective",
+        category: "indie",
+        duration: "3:34",
+        seconds: 214,
+        preview_url: "https://cdn.freesound.org/previews/612/612610_5674468-lq.mp3",
+        cover_art_url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800",
+        freq: 220
+      },
+      {
+        id: "trk_amuse_201",
+        releaseId: "rel_amuse_002",
+        title: "Isla Verde Groove",
+        artist: "Vlady Santos",
+        category: "urbano",
+        duration: "3:05",
+        seconds: 185,
+        preview_url: "https://cdn.freesound.org/previews/567/567280_1648170-lq.mp3",
+        cover_art_url: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800",
+        freq: 293.66
+      },
+      {
+        id: "trk_amuse_202",
+        releaseId: "rel_amuse_002",
+        title: "Condado Nights",
+        artist: "Vlady Santos",
+        category: "urbano",
+        duration: "3:22",
+        seconds: 202,
+        preview_url: "https://cdn.freesound.org/previews/450/450622_5121236-lq.mp3",
+        cover_art_url: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800",
+        freq: 261.63
+      },
+      {
+        id: "trk_amuse_301",
+        releaseId: "rel_amuse_003",
+        title: "Gravedad Cero",
+        artist: "Isla Sintética",
+        category: "indie",
+        duration: "3:35",
+        seconds: 215,
+        preview_url: "https://cdn.freesound.org/previews/511/511874_11222409-lq.mp3",
+        cover_art_url: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800",
+        freq: 329.63
+      },
+      {
+        id: "trk_amuse_401",
+        releaseId: "rel_amuse_004",
+        title: "Frecuencia Caribe (Master Final)",
+        artist: "Vlady Santos",
+        category: "urbano",
+        duration: "3:12",
+        seconds: 192,
+        preview_url: "https://cdn.freesound.org/previews/415/415994_5121236-lq.mp3",
+        cover_art_url: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800",
+        freq: 349.23
+      }
     ];
 
     let currentTrackIndex = 0;
     let isPlaying = false;
-    let currentSeconds = 12;
+    let currentSeconds = 0;
     let timerInterval = null;
     let audioCtx = null;
     let oscillator = null;
     let gainNode = null;
+    let isSynthMode = false;
+    const nativeAudio = document.getElementById('nativeAudioPlayer');
 
-    function initAudio() {
+    // Inicializar sintetizador Web Audio para fallback sonoro
+    function initAudioContext() {
       if (!audioCtx) {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         audioCtx = new AudioContext();
@@ -1344,7 +1408,7 @@
 
     function startSynthPreview(freq) {
       try {
-        initAudio();
+        initAudioContext();
         if (audioCtx.state === 'suspended') {
           audioCtx.resume();
         }
@@ -1352,11 +1416,12 @@
         oscillator = audioCtx.createOscillator();
         gainNode = audioCtx.createGain();
         oscillator.type = 'triangle';
-        oscillator.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        oscillator.frequency.setValueAtTime(freq || 220, audioCtx.currentTime);
         gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime);
         oscillator.connect(gainNode);
         gainNode.connect(audioCtx.destination);
         oscillator.start();
+        isSynthMode = true;
       } catch (e) {
         console.warn('Web Audio no disponible directamente sin interacción previa');
       }
@@ -1370,16 +1435,120 @@
         } catch(e) {}
         oscillator = null;
       }
+      isSynthMode = false;
     }
 
-    function playTrack(id) {
-      const idx = tracks.findIndex(t => t.id === id);
+    // Cargar Catálogo Sincronizado desde data/catalog_synced.json
+    async function initCatalog() {
+      try {
+        const res = await fetch('data/catalog_synced.json');
+        if (res.ok) {
+          catalogReleases = await res.json();
+          renderCatalog(catalogReleases);
+          buildPlayableList(catalogReleases);
+          console.log('✅ [CATALOG] Sincronizado exitosamente desde data/catalog_synced.json');
+        } else {
+          console.warn('⚠️ [CATALOG] Respuesta HTTP no exitosa, manteniendo catálogo estandar');
+        }
+      } catch (e) {
+        console.info('ℹ️ [CATALOG] Modo local directo, utilizando catálogo precargado');
+      }
+      loadTrackInfo();
+    }
+
+    function buildPlayableList(releases) {
+      const list = [];
+      releases.forEach(rel => {
+        if (rel.tracks && rel.tracks.length > 0) {
+          rel.tracks.forEach(trk => {
+            list.push({
+              id: trk.id,
+              releaseId: rel.id,
+              title: trk.title,
+              artist: rel.artist || 'EAJ Music Artist',
+              category: rel.category || (rel.type === 'ep' ? 'ep' : 'urbano'),
+              duration: formatSeconds(trk.duration_seconds),
+              seconds: trk.duration_seconds,
+              preview_url: trk.preview_url,
+              cover_art_url: rel.cover_art_url,
+              freq: trk.freq || 220
+            });
+          });
+        }
+      });
+      if (list.length > 0) {
+        playableTracks = list;
+      }
+    }
+
+    function renderCatalog(releases) {
+      const grid = document.getElementById('catalogGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      releases.forEach((rel, index) => {
+        const track = rel.tracks && rel.tracks[0] ? rel.tracks[0] : null;
+        const trackId = track ? track.id : 'trk_' + rel.id;
+        const category = rel.category || (rel.type === 'ep' ? 'ep' : 'urbano');
+        const spotifyUrl = rel.stores && rel.stores.spotify ? rel.stores.spotify.url : '#';
+        const appleUrl = rel.stores && rel.stores.apple_music ? rel.stores.apple_music.url : '#';
+
+        const card = document.createElement('article');
+        card.className = 'release-card';
+        card.setAttribute('data-category', category);
+        card.setAttribute('data-id', rel.id);
+
+        card.innerHTML = `
+          <div class="release-art-wrap">
+            <div class="vinyl-artwork" style="background-image: url('${rel.cover_art_url}'); background-size: cover; background-position: center;">
+              <div class="vinyl-circle" style="background: radial-gradient(circle, #0e0e11 35%, #22222a 36%, #111116 55%, #2a2a35 56%, #0d0d12 70%);">
+                <div class="vinyl-center">${rel.type === 'ep' ? 'EP' : 'EAJ'}</div>
+              </div>
+            </div>
+            <button class="play-overlay-btn" title="Reproducir preview" onclick="playTrackById('${trackId}')">▶</button>
+          </div>
+          <div class="release-details">
+            <div class="release-meta">
+              <span class="release-tag">${rel.genre || 'EAJ Sello'}</span>
+              <span class="release-year">${rel.release_date ? rel.release_date.split('-')[0] : '2026'}</span>
+            </div>
+            <h3 class="release-title">${rel.title}</h3>
+            <p class="release-artist">${rel.artist || 'EAJ Music Collective'}</p>
+            <div class="release-actions">
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">${rel.plan || 'Pro Artist'} · Máster</span>
+              <div class="streaming-links">
+                <a href="${spotifyUrl}" target="_blank" class="stream-icon" title="Abrir en Spotify">Spotify</a>
+                <a href="${appleUrl}" target="_blank" class="stream-icon" title="Abrir en Apple Music">Apple</a>
+              </div>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function formatSeconds(sec) {
+      const m = Math.floor(sec / 60);
+      const s = (sec % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function playTrackById(id) {
+      const idx = playableTracks.findIndex(t => t.id === id);
       if (idx !== -1) {
         currentTrackIndex = idx;
         currentSeconds = 0;
         loadTrackInfo();
         setPlayState(true);
       }
+    }
+
+    function playTrack(idxNum) {
+      const idx = (idxNum - 1) % playableTracks.length;
+      currentTrackIndex = idx >= 0 ? idx : 0;
+      currentSeconds = 0;
+      loadTrackInfo();
+      setPlayState(true);
     }
 
     function togglePlay() {
@@ -1390,15 +1559,33 @@
       isPlaying = play;
       const playBtn = document.getElementById('mainPlayBtn');
       const waveBox = document.getElementById('waveformBox');
-      
+      const track = playableTracks[currentTrackIndex];
+
       if (isPlaying) {
         playBtn.innerText = '⏸';
         waveBox.classList.add('is-playing');
-        startSynthPreview(tracks[currentTrackIndex].freq);
+
+        // Intentar reproducción con audio nativo si existe preview_url
+        if (track && track.preview_url && track.preview_url.startsWith('http')) {
+          nativeAudio.src = track.preview_url;
+          nativeAudio.play().then(() => {
+            isSynthMode = false;
+          }).catch(err => {
+            console.warn('⚠️ Fallo en audio nativo (CORS o restricción de red), conmutando a Web Audio synth:', err);
+            startSynthPreview(track.freq);
+          });
+        } else {
+          startSynthPreview(track.freq);
+        }
+
         clearInterval(timerInterval);
         timerInterval = setInterval(() => {
-          currentSeconds++;
-          if (currentSeconds > tracks[currentTrackIndex].seconds) {
+          if (!isSynthMode && nativeAudio && !nativeAudio.paused && !isNaN(nativeAudio.currentTime)) {
+            currentSeconds = Math.floor(nativeAudio.currentTime);
+          } else {
+            currentSeconds++;
+          }
+          if (currentSeconds > track.seconds) {
             nextTrack();
             return;
           }
@@ -1407,40 +1594,49 @@
       } else {
         playBtn.innerText = '▶';
         waveBox.classList.remove('is-playing');
+        if (nativeAudio) {
+          nativeAudio.pause();
+        }
         stopSynthPreview();
         clearInterval(timerInterval);
       }
     }
 
     function nextTrack() {
-      currentTrackIndex = (currentTrackIndex + 1) % tracks.length;
+      currentTrackIndex = (currentTrackIndex + 1) % playableTracks.length;
       currentSeconds = 0;
       loadTrackInfo();
       setPlayState(true);
     }
 
     function prevTrack() {
-      currentTrackIndex = (currentTrackIndex - 1 + tracks.length) % tracks.length;
+      currentTrackIndex = (currentTrackIndex - 1 + playableTracks.length) % playableTracks.length;
       currentSeconds = 0;
       loadTrackInfo();
       setPlayState(true);
     }
 
     function loadTrackInfo() {
-      const track = tracks[currentTrackIndex];
+      const track = playableTracks[currentTrackIndex];
+      if (!track) return;
       document.getElementById('playerTitle').innerText = track.title;
       document.getElementById('playerArtist').innerText = track.artist;
       document.getElementById('totalTime').innerText = track.duration;
-      document.getElementById('playerBadge').innerText = 'EAJ-' + track.id;
+      document.getElementById('playerBadge').innerText = 'EAJ';
+      if (track.cover_art_url) {
+        document.getElementById('playerBadge').style.backgroundImage = `url('${track.cover_art_url}')`;
+        document.getElementById('playerBadge').style.backgroundSize = 'cover';
+      }
       updateProgressUI();
     }
 
     function updateProgressUI() {
-      const track = tracks[currentTrackIndex];
+      const track = playableTracks[currentTrackIndex];
+      if (!track) return;
       const mins = Math.floor(currentSeconds / 60);
       const secs = (currentSeconds % 60).toString().padStart(2, '0');
       document.getElementById('currTime').innerText = `${mins}:${secs}`;
-      const percent = (currentSeconds / track.seconds) * 100;
+      const percent = Math.min(100, (currentSeconds / track.seconds) * 100);
       document.getElementById('progressFill').style.width = `${percent}%`;
     }
 
@@ -1449,30 +1645,40 @@
       const rect = bar.getBoundingClientRect();
       const clickX = event.clientX - rect.left;
       const ratio = Math.max(0, Math.min(1, clickX / rect.width));
-      currentSeconds = Math.floor(ratio * tracks[currentTrackIndex].seconds);
+      const track = playableTracks[currentTrackIndex];
+      currentSeconds = Math.floor(ratio * track.seconds);
+      if (nativeAudio && !isSynthMode) {
+        try {
+          nativeAudio.currentTime = currentSeconds;
+        } catch(e) {}
+      }
       updateProgressUI();
     }
 
-    const filterBtns = document.querySelectorAll('.filter-btn');
-    const cards = document.querySelectorAll('.release-card');
+    // Configurar listeners para filtros
+    document.addEventListener('DOMContentLoaded', () => {
+      const filterBtns = document.querySelectorAll('.filter-btn');
+      filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          filterBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const filter = btn.getAttribute('data-filter');
 
-    filterBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        filterBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        const filter = btn.getAttribute('data-filter');
-
-        cards.forEach(card => {
-          if (filter === 'all' || card.getAttribute('data-category') === filter) {
-            card.style.display = 'flex';
-          } else {
-            card.style.display = 'none';
-          }
+          const cards = document.querySelectorAll('.release-card');
+          cards.forEach(card => {
+            const cat = card.getAttribute('data-category');
+            if (filter === 'all' || cat === filter) {
+              card.style.display = 'flex';
+            } else {
+              card.style.display = 'none';
+            }
+          });
         });
       });
-    });
 
-    loadTrackInfo();
+      // Cargar catálogo e inicializar
+      initCatalog();
+    });
   </script>
 </body>
 </html>

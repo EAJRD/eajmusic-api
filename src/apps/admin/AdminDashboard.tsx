@@ -3,9 +3,12 @@ import ReleasesList from './ReleasesList';
 import UsersList from './UsersList';
 import PlansAndCommissions from './PlansAndCommissions';
 import BrandSettings from './BrandSettings';
+import Announcements from './Announcements';
+import SupportTickets from './SupportTickets';
+import AdminSettings from './AdminSettings';
 
 export const AdminDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'releases' | 'users' | 'plans' | 'brand'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'releases' | 'users' | 'plans' | 'announcements' | 'tickets' | 'brand' | 'settings'>('overview');
   const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   const handleManualSync = () => {
@@ -19,7 +22,7 @@ export const AdminDashboard: React.FC = () => {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#08080a', color: '#f4f4f7', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
       {/* Sidebar */}
-      <aside style={{ width: 260, background: '#121217', borderRight: '1px solid #23232f', padding: '1.75rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      <aside style={{ width: 270, background: '#121217', borderRight: '1px solid #23232f', padding: '1.75rem 1.25rem', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
         <a href="/" style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', textDecoration: 'none', color: '#fff' }}>
           <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#181822', border: '1px solid #e5b358', color: '#e5b358', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cinzel, serif', fontWeight: 800, fontSize: '0.95rem', boxShadow: '0 0 12px rgba(229, 179, 88, 0.25)' }}>
             EAJ
@@ -30,20 +33,19 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </a>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', flexGrow: 1 }}>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flexGrow: 1 }}>
           <button
             onClick={() => setActiveTab('overview')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '0.85rem',
-              padding: '0.75rem 1rem',
-              borderRadius: 10,
+              padding: '0.65rem 1rem',
+              borderRadius: 8,
               background: activeTab === 'overview' ? 'rgba(229, 179, 88, 0.12)' : 'transparent',
               color: activeTab === 'overview' ? '#e5b358' : '#9292a0',
               border: activeTab === 'overview' ? '1px solid rgba(229, 179, 88, 0.35)' : 'none',
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
-              fontSize: '0.88rem',
+              fontSize: '0.86rem',
               fontWeight: 600,
               cursor: 'pointer',
               textAlign: 'left'
@@ -58,13 +60,12 @@ export const AdminDashboard: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               gap: '0.85rem',
-              padding: '0.75rem 1rem',
-              borderRadius: 10,
+              padding: '0.65rem 1rem',
+              borderRadius: 8,
               background: activeTab === 'releases' ? 'rgba(229, 179, 88, 0.12)' : 'transparent',
               color: activeTab === 'releases' ? '#e5b358' : '#9292a0',
               border: activeTab === 'releases' ? '1px solid rgba(229, 179, 88, 0.35)' : 'none',
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
-              fontSize: '0.88rem',
+              fontSize: '0.86rem',
               fontWeight: 600,
               cursor: 'pointer',
               textAlign: 'left'
@@ -79,13 +80,12 @@ export const AdminDashboard: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               gap: '0.85rem',
-              padding: '0.75rem 1rem',
-              borderRadius: 10,
+              padding: '0.65rem 1rem',
+              borderRadius: 8,
               background: activeTab === 'users' ? 'rgba(229, 179, 88, 0.12)' : 'transparent',
               color: activeTab === 'users' ? '#e5b358' : '#9292a0',
               border: activeTab === 'users' ? '1px solid rgba(229, 179, 88, 0.35)' : 'none',
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
-              fontSize: '0.88rem',
+              fontSize: '0.86rem',
               fontWeight: 600,
               cursor: 'pointer',
               textAlign: 'left'
@@ -100,13 +100,12 @@ export const AdminDashboard: React.FC = () => {
               display: 'flex',
               alignItems: 'center',
               gap: '0.85rem',
-              padding: '0.75rem 1rem',
-              borderRadius: 10,
+              padding: '0.65rem 1rem',
+              borderRadius: 8,
               background: activeTab === 'plans' ? 'rgba(229, 179, 88, 0.12)' : 'transparent',
               color: activeTab === 'plans' ? '#e5b358' : '#9292a0',
               border: activeTab === 'plans' ? '1px solid rgba(229, 179, 88, 0.35)' : 'none',
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
-              fontSize: '0.88rem',
+              fontSize: '0.86rem',
               fontWeight: 600,
               cursor: 'pointer',
               textAlign: 'left'
@@ -116,24 +115,83 @@ export const AdminDashboard: React.FC = () => {
           </button>
 
           <button
+            onClick={() => setActiveTab('announcements')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.85rem',
+              padding: '0.65rem 1rem',
+              borderRadius: 8,
+              background: activeTab === 'announcements' ? 'rgba(229, 179, 88, 0.12)' : 'transparent',
+              color: activeTab === 'announcements' ? '#e5b358' : '#9292a0',
+              border: activeTab === 'announcements' ? '1px solid rgba(229, 179, 88, 0.35)' : 'none',
+              fontSize: '0.86rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            📢 Avisos & Comunicados
+          </button>
+
+          <button
+            onClick={() => setActiveTab('tickets')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.85rem',
+              padding: '0.65rem 1rem',
+              borderRadius: 8,
+              background: activeTab === 'tickets' ? 'rgba(229, 179, 88, 0.12)' : 'transparent',
+              color: activeTab === 'tickets' ? '#e5b358' : '#9292a0',
+              border: activeTab === 'tickets' ? '1px solid rgba(229, 179, 88, 0.35)' : 'none',
+              fontSize: '0.86rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            🎫 Mesa de Soporte (Tickets)
+          </button>
+
+          <button
             onClick={() => setActiveTab('brand')}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '0.85rem',
-              padding: '0.75rem 1rem',
-              borderRadius: 10,
+              padding: '0.65rem 1rem',
+              borderRadius: 8,
               background: activeTab === 'brand' ? 'rgba(229, 179, 88, 0.12)' : 'transparent',
               color: activeTab === 'brand' ? '#e5b358' : '#9292a0',
               border: activeTab === 'brand' ? '1px solid rgba(229, 179, 88, 0.35)' : 'none',
-              fontFamily: "'Plus Jakarta Sans', sans-serif",
-              fontSize: '0.88rem',
+              fontSize: '0.86rem',
               fontWeight: 600,
               cursor: 'pointer',
               textAlign: 'left'
             }}
           >
             🎨 Identidad & Favicon
+          </button>
+
+          <button
+            onClick={() => setActiveTab('settings')}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.85rem',
+              padding: '0.65rem 1rem',
+              borderRadius: 8,
+              background: activeTab === 'settings' ? 'rgba(229, 179, 88, 0.12)' : 'transparent',
+              color: activeTab === 'settings' ? '#e5b358' : '#9292a0',
+              border: activeTab === 'settings' ? '1px solid rgba(229, 179, 88, 0.35)' : 'none',
+              fontSize: '0.86rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'left'
+            }}
+          >
+            ⚙️ Ajustes de Infraestructura
           </button>
         </nav>
 
@@ -229,7 +287,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Quick Access to Moderation */}
+            {/* Acceso Directo a la Cola */}
             <div style={{ marginBottom: '2rem' }}>
               <ReleasesList />
             </div>
@@ -245,8 +303,17 @@ export const AdminDashboard: React.FC = () => {
         {/* Tab 4: Plans & Commissions */}
         {activeTab === 'plans' && <PlansAndCommissions />}
 
-        {/* Tab 5: Brand Settings */}
+        {/* Tab 5: Announcements */}
+        {activeTab === 'announcements' && <Announcements />}
+
+        {/* Tab 6: Support Tickets */}
+        {activeTab === 'tickets' && <SupportTickets />}
+
+        {/* Tab 7: Brand Settings */}
         {activeTab === 'brand' && <BrandSettings />}
+
+        {/* Tab 8: Admin Infrastructure Settings */}
+        {activeTab === 'settings' && <AdminSettings />}
       </main>
     </div>
   );

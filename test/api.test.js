@@ -116,3 +116,116 @@ test('8. 2FA Verify valida código de un solo uso o código de respaldo', async 
   const data = await res.json();
   assert.strictEqual(data.verified, true);
 });
+
+test('9. Health check reporta InsForge activo (https://sv9mfvjq.us-east.insforge.app) sin errores 401/503', async () => {
+  const res = await fetch(`${BASE_URL}/health`);
+  assert.strictEqual(res.status, 200);
+  const data = await res.json();
+  assert.strictEqual(data.status, 'ok');
+  assert.strictEqual(data.insforge.active_host, 'https://sv9mfvjq.us-east.insforge.app');
+  assert.strictEqual(data.insforge.status, 'connected');
+});
+
+test('10. /auth/sync-insforge-user rechaza solicitud sin token con 401 Unauthorized', async () => {
+  const res = await fetch(`${BASE_URL}/auth/sync-insforge-user`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  });
+  assert.strictEqual(res.status, 401);
+  const data = await res.json();
+  assert.strictEqual(data.error, 'Unauthorized');
+  assert.strictEqual(data.message, 'Missing InsForge access token');
+});
+
+test('11. /auth/sync-insforge-user rechaza token falso o con firma inválida con 401', async () => {
+  const fakeToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OCIsImVtYWlsIjoidGVzdEBlYWptdXNpYy5jb20ifQ.fake_signature';
+  const res = await fetch(`${BASE_URL}/auth/sync-insforge-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${fakeToken}`
+    }
+  });
+  assert.strictEqual(res.status, 401);
+  const data = await res.json();
+  assert.strictEqual(data.error, 'Unauthorized');
+  assert.strictEqual(data.message, 'Invalid or expired InsForge token');
+});
+
+test('12. /auth/sync-insforge-user acepta tokens válidos emitidos por https://sv9mfvjq.us-east.insforge.app', async () => {
+  const crypto = await import('node:crypto');
+  const secret = 'd3ae7390f3b62f0321ea449d6e88a419cdb6dcc2';
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    sub: '42af7d31-b63a-4bc4-95db-71bec9584d87',
+    email: 'diro-net@hotmail.com',
+    role: 'authenticated',
+    exp: Math.floor(Date.now() / 1000) + 3600
+  })).toString('base64url');
+
+  const signature = crypto.default.createHmac('sha256', secret)
+    .update(`${header}.${payload}`)
+    .digest('base64url');
+
+  const validToken = `${header}.${payload}.${signature}`;
+
+  const res = await fetch(`${BASE_URL}/auth/sync-insforge-user`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${validToken}`
+    },
+    body: JSON.stringify({
+      name: 'EAJRD Producer',
+      accountType: 'ARTIST'
+    })
+  });
+
+  assert.strictEqual(res.status, 200);
+  const data = await res.json();
+  assert.strictEqual(data.success, true);
+  assert.strictEqual(data.user.email, 'diro-net@hotmail.com');
+  assert.strictEqual(data.user.insforge_user_id, '42af7d31-b63a-4bc4-95db-71bec9584d87');
+  assert.strictEqual(data.artist.name, 'EAJRD Producer');
+  assert(data.token.startsWith('jwt_eaj_'));
+});
+
+test('13. /v1/auth/me acepta token Bearer de InsForge activo directamente', async () => {
+  const crypto = await import('node:crypto');
+  const secret = 'd3ae7390f3b62f0321ea449d6e88a419cdb6dcc2';
+  const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    sub: '42af7d31-b63a-4bc4-95db-71bec9584d87',
+    email: 'diro-net@hotmail.com',
+    role: 'authenticated',
+    exp: Math.floor(Date.now() / 1000) + 3600
+  })).toString('base64url');
+
+  const signature = crypto.default.createHmac('sha256', secret)
+    .update(`${header}.${payload}`)
+    .digest('base64url');
+
+  const validToken = `${header}.${payload}.${signature}`;
+
+  const res = await fetch(`${BASE_URL}/v1/auth/me`, {
+    headers: {
+      'Authorization': `Bearer ${validToken}`
+    }
+  });
+
+  assert.strictEqual(res.status, 200);
+  const data = await res.json();
+  assert.strictEqual(data.insforge_session, true);
+  assert.strictEqual(data.user.email, 'diro-net@hotmail.com');
+});
+
+test('14. Auditoría de compatibilidad InsForge: /auth/sync-insforge-user no arroja errores 503 ante fallos de conexión', async () => {
+  const res = await fetch(`${BASE_URL}/auth/sync-insforge-user`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: '' })
+  });
+  assert.notStrictEqual(res.status, 503);
+  assert.strictEqual(res.status, 401);
+});

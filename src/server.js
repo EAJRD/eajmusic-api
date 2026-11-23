@@ -170,6 +170,92 @@ function parseJsonBody(req) {
   });
 }
 
+// Configuración InsForge Activo
+const INSFORGE_CONFIG = {
+  url: process.env.INSFORGE_URL || 'https://sv9mfvjq.us-east.insforge.app',
+  appKey: process.env.INSFORGE_APP_KEY || 'sv9mfvjq',
+  jwtSecret: process.env.INSFORGE_JWT_SECRET || 'd3ae7390f3b62f0321ea449d6e88a419cdb6dcc2',
+  jwtKeyId: 'kid_e53d8b8d85b4d7797977c1d9f4e780db',
+  publicKeyPem: `-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwIDIFqFSRxcDHFww+Blc
+D1Os6pPqlHNtA+R7BI75lOPNbgyjYeKwujSoEQhOHp3Ty+4anejaramd1ztBNjqE
+wgKdfT0NQxdrXThhqTmiG1U3p2aSOgiusTBaPNd+HlV015EiAR1F1MdvGx5nIiln
+LQ69edM2uI2/YgMYQiu4Oz3xKQXjuDC41+/X1cypuDlrCww07xOe7pWp5WDWzLsf
+/EcdK8t67NBiOP/9girm5QPARKG77Ap7TImwkIHa7tZBzNYereOoVwKf8dC4dFFk
+WTWDMgrED4gVZ5/4bKfxU56o71FtaU1IT6/hh2fypLZZIIl5fzUnWUw4SL1QW9Tt
+xwIDAQAB
+-----END PUBLIC KEY-----`
+};
+
+/**
+ * Verifica tokens JWT emitidos por https://sv9mfvjq.us-east.insforge.app
+ * Soporta firmas asimétricas RS256 (con clave pública / JWKS) y HMAC HS256 (con JWT secret).
+ */
+export function verifyInsforgeToken(token) {
+  if (!token || typeof token !== 'string') {
+    throw new Error('Token no provisto o inválido');
+  }
+
+  const parts = token.trim().split('.');
+  if (parts.length !== 3) {
+    throw new Error('Formato JWT inválido (debe contener 3 segmentos)');
+  }
+
+  const [headerB64, payloadB64, signatureB64] = parts;
+  let header, payload;
+  try {
+    header = JSON.parse(Buffer.from(headerB64, 'base64url').toString('utf-8'));
+    payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
+  } catch (err) {
+    throw new Error('Segmentos del token malformados o no decodificables');
+  }
+
+  // Validación de expiración
+  if (payload.exp && typeof payload.exp === 'number') {
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (nowSec > payload.exp) {
+      throw new Error('Token de InsForge expirado');
+    }
+  }
+
+  const signatureBuffer = Buffer.from(signatureB64, 'base64url');
+  let isValid = false;
+
+  if (header.alg === 'RS256') {
+    try {
+      const verifier = crypto.createVerify('RSA-SHA256');
+      verifier.update(`${headerB64}.${payloadB64}`);
+      isValid = verifier.verify(INSFORGE_CONFIG.publicKeyPem, signatureBuffer);
+    } catch (err) {
+      isValid = false;
+    }
+  } else if (header.alg === 'HS256') {
+    try {
+      const expected = crypto.createHmac('sha256', INSFORGE_CONFIG.jwtSecret)
+        .update(`${headerB64}.${payloadB64}`)
+        .digest();
+      if (expected.length === signatureBuffer.length) {
+        isValid = crypto.timingSafeEqual(expected, signatureBuffer);
+      }
+    } catch (err) {
+      isValid = false;
+    }
+  } else {
+    throw new Error(`Algoritmo no soportado: ${header.alg}`);
+  }
+
+  if (!isValid) {
+    throw new Error('Firma criptográfica de InsForge no válida');
+  }
+
+  // Verificar rol
+  if (payload.role && payload.role !== 'authenticated' && payload.role !== 'anon') {
+    throw new Error(`Rol de InsForge no autorizado: ${payload.role}`);
+  }
+
+  return payload;
+}
+
 // Configuración CORS estándar de producción
 function setCorsHeaders(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -199,13 +285,122 @@ const server = http.createServer(async (req, res) => {
 
   try {
     // 1. Health Check
-    if (pathname === '/health' || pathname === '/api/health') {
+    if (pathname === '/health' || pathname === '/api/health' || pathname === '/v1/health') {
       return sendJson(res, 200, {
         status: 'ok',
         service: 'EAJMUSIC API Production Engine',
         version: '1.2.0',
+        insforge: {
+          active_host: INSFORGE_CONFIG.url,
+          app_key: INSFORGE_CONFIG.appKey,
+          status: 'connected'
+        },
         timestamp: new Date().toISOString(),
         uptime_seconds: process.uptime()
+      });
+    }
+
+    // 1.1 Sincronización de Usuario con InsForge (/auth/sync-insforge-user)
+    if (
+      pathname === '/auth/sync-insforge-user' ||
+      pathname === '/api/auth/sync-insforge-user' ||
+      pathname === '/v1/auth/sync-insforge-user'
+    ) {
+      if (method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
+
+      const authHeader = req.headers['authorization'];
+      const body = await parseJsonBody(req);
+      const token = authHeader?.startsWith('Bearer ')
+        ? authHeader.slice(7)
+        : (body.accessToken || body.insforgeToken || body.token);
+
+      if (!token) {
+        return sendJson(res, 401, {
+          error: 'Unauthorized',
+          message: 'Missing InsForge access token'
+        });
+      }
+
+      let decoded;
+      try {
+        decoded = verifyInsforgeToken(token);
+      } catch (err) {
+        return sendJson(res, 401, {
+          error: 'Unauthorized',
+          message: 'Invalid or expired InsForge token',
+          details: err.message
+        });
+      }
+
+      const insforgeUserId = decoded.sub;
+      const email = (decoded.email || '').toLowerCase();
+      if (!insforgeUserId) {
+        return sendJson(res, 400, {
+          error: 'Bad Request',
+          message: 'InsForge token is missing sub claim'
+        });
+      }
+
+      // Sincronizar o crear en la base de datos de usuarios
+      let user = DB.users.find(u => u.insforge_user_id === insforgeUserId || (email && u.email === email));
+      if (!user) {
+        user = {
+          id: `usr_${insforgeUserId.replace(/-/g, '').slice(0, 12)}`,
+          insforge_user_id: insforgeUserId,
+          email: email || `user_${insforgeUserId.slice(0, 8)}@eajmusic.com`,
+          name: body.name || (email ? email.split('@')[0] : 'EAJ Artist'),
+          role: body.accountType ? body.accountType.toLowerCase() : 'artist',
+          plan: 'free',
+          ath_movil_number: null,
+          two_factor_enabled: false,
+          two_factor_secret: null,
+          two_factor_backup_codes: [],
+          created_at: new Date().toISOString()
+        };
+        DB.users.push(user);
+      } else {
+        user.insforge_user_id = insforgeUserId;
+        if (body.name) user.name = body.name;
+        if (body.accountType) user.role = body.accountType.toLowerCase();
+      }
+
+      // Sincronizar perfil de artista asociado
+      let artist = DB.artists.find(a => a.user_id === user.id);
+      if (!artist) {
+        artist = {
+          id: `art_${user.id.replace('usr_', '')}`,
+          user_id: user.id,
+          name: user.name,
+          spotify_uri: `spotify:artist:${user.id}`,
+          apple_music_id: null,
+          avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name)}&background=random`,
+          created_at: new Date().toISOString()
+        };
+        DB.artists.push(artist);
+      }
+
+      const sessionToken = `jwt_eaj_${crypto.randomBytes(16).toString('hex')}`;
+
+      return sendJson(res, 200, {
+        success: true,
+        message: 'User synchronized with InsForge successfully',
+        insforge_host: INSFORGE_CONFIG.url,
+        user: {
+          id: user.id,
+          insforge_user_id: user.insforge_user_id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          plan: user.plan,
+          ath_movil_number: user.ath_movil_number
+        },
+        artist: {
+          id: artist.id,
+          name: artist.name,
+          avatar_url: artist.avatar_url,
+          spotify_uri: artist.spotify_uri
+        },
+        token: sessionToken
       });
     }
 
@@ -238,6 +433,30 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (pathname === '/v1/auth/me' || pathname === '/api/v1/auth/me') {
+      const authHeader = req.headers['authorization'];
+      if (authHeader?.startsWith('Bearer ')) {
+        const rawToken = authHeader.slice(7);
+        // Si es un token de InsForge (formato JWT de 3 partes)
+        if (rawToken.split('.').length === 3) {
+          try {
+            const decoded = verifyInsforgeToken(rawToken);
+            const user = DB.users.find(u => u.insforge_user_id === decoded.sub || u.email === decoded.email?.toLowerCase()) || DB.users[0];
+            const artist = DB.artists.find(a => a.user_id === user.id) || DB.artists[0];
+            return sendJson(res, 200, {
+              user,
+              active_artist: artist,
+              insforge_session: true
+            });
+          } catch (err) {
+            return sendJson(res, 401, {
+              error: 'Unauthorized',
+              message: 'Invalid InsForge token',
+              details: err.message
+            });
+          }
+        }
+      }
+
       const user = DB.users[0];
       const artist = DB.artists[0];
       return sendJson(res, 200, {

@@ -107,6 +107,7 @@ export const ReleaseWizard = ({ onSubmit }: any) => {
         {step === 4 && (
             <StepAssets
                 formData={formData}
+                setFormData={setFormData}
                 setStep={setStep}
                 trackAssets={trackAssets}
                 setTrackAssets={setTrackAssets}

@@ -2,6 +2,14 @@ export type UserRole = 'artist' | 'admin';
 export type ViewState = 'login' | 'artist_app' | 'admin_dashboard';
 export type ReleaseStatus = 'pending' | 'approved' | 'ready_for_bot' | 'uploaded' | 'rejected';
 
+export interface SplitContributor {
+  id: string;
+  name: string;
+  email: string;
+  role: 'Artist' | 'Producer' | 'Composer' | 'Songwriter' | 'Label' | 'Other';
+  percentage: number;
+}
+
 export interface Track {
   id: string;
   title: string;
@@ -17,6 +25,7 @@ export interface Track {
   audioUrl?: string;
   coverUrl?: string;
   splitSheetUrl?: string;
+  splits?: SplitContributor[];
 }
 
 export interface Release {
@@ -34,6 +43,7 @@ export interface Release {
   masteringEngineers: string;
   tracks: Track[];
   splitSheetUrl: string | null;
+  splits?: SplitContributor[];
   status: ReleaseStatus;
 }
 

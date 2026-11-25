@@ -1,11 +1,15 @@
-import React from "react";
-import { Release } from "../../types";
+import React, { useState } from "react";
+import { Release, SplitContributor } from "../../types";
 import { Icons, validateCoverArt } from "../../utils";
+import { AudioPreviewPlayer } from "../AudioPreviewPlayer";
+import { SplitsModal } from "../SplitsModal";
+import { Users } from "lucide-react";
 
 export type TrackAssetsMap = Record<string, { audio?: File, cover?: File, splitSheet?: File }>;
 
 interface StepAssetsProps {
   formData: Partial<Release>;
+  setFormData?: React.Dispatch<React.SetStateAction<Partial<Release>>>;
   setStep: (step: number) => void;
   // Asset State Handlers passed from parent
   trackAssets: TrackAssetsMap;
@@ -22,6 +26,7 @@ interface StepAssetsProps {
 
 export const StepAssets = ({
   formData,
+  setFormData,
   setStep,
   trackAssets,
   setTrackAssets,
@@ -34,6 +39,16 @@ export const StepAssets = ({
   setValidationMsg,
   onSubmit
 }: StepAssetsProps) => {
+  const [activeSplitTrackId, setActiveSplitTrackId] = useState<string | null>(null);
+
+  const handleSaveSplits = (trackId: string, splits: SplitContributor[]) => {
+    if (setFormData) {
+      setFormData(prev => ({
+        ...prev,
+        tracks: (prev.tracks || []).map(t => (t.id === trackId ? { ...t, splits } : t))
+      }));
+    }
+  };
 
   const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files[0]) {
@@ -134,12 +149,19 @@ export const StepAssets = ({
                                     <span className="text-[10px] text-slate-600">WAV/FLAC</span>
                                 </div>
                                 {trackAssets[track.id]?.audio ? (
-                                    <div className="flex items-center gap-2 text-emerald-400 text-xs bg-emerald-950/30 px-2 py-2 rounded border border-emerald-900/50 justify-between">
-                                        <div className="flex items-center gap-1 overflow-hidden">
-                                            <Icons.AudioFile />
-                                            <span className="truncate">{trackAssets[track.id]!.audio!.name}</span>
+                                    <div className="space-y-2">
+                                        <div className="flex items-center gap-2 text-emerald-400 text-xs bg-emerald-950/30 px-2 py-2 rounded border border-emerald-900/50 justify-between">
+                                            <div className="flex items-center gap-1 overflow-hidden">
+                                                <Icons.AudioFile />
+                                                <span className="truncate">{trackAssets[track.id]!.audio!.name}</span>
+                                            </div>
+                                            <button onClick={() => removeTrackAsset(track.id, 'audio')} className="text-emerald-500 hover:text-white">✕</button>
                                         </div>
-                                        <button onClick={() => removeTrackAsset(track.id, 'audio')} className="text-emerald-500 hover:text-white">✕</button>
+                                        <AudioPreviewPlayer
+                                            src={URL.createObjectURL(trackAssets[track.id]!.audio!)}
+                                            trackTitle={track.title || `Track ${i + 1}`}
+                                            artistName={formData.mainArtist || "EAJ Artist"}
+                                        />
                                     </div>
                                 ) : (
                                     <div className="relative">
@@ -173,12 +195,25 @@ export const StepAssets = ({
                                     </div>
                                 )}
                             </div>
-                            {/* SPLIT SHEET */}
-                            <div className="bg-dark-950/50 rounded p-3 border border-dark-800">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-[10px] uppercase font-bold text-slate-400">Split Sheet (Opt)</span>
-                                    <span className="text-[10px] text-slate-600">PDF</span>
+                            {/* SPLIT SHEET & DIGITAL SPLITS */}
+                            <div className="bg-dark-950/50 rounded p-3 border border-dark-800 flex flex-col justify-between">
+                                <div>
+                                  <div className="flex justify-between items-center mb-2">
+                                      <span className="text-[10px] uppercase font-bold text-slate-400">Splits & Regalías</span>
+                                      <span className="text-[10px] text-slate-500 font-mono">
+                                        {track.splits?.length ? `${track.splits.length} pers.` : 'Auto 100%'}
+                                      </span>
+                                  </div>
+                                  <button
+                                      type="button"
+                                      onClick={() => setActiveSplitTrackId(track.id)}
+                                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-[#121212] hover:bg-[#1C1C1C] text-sky-400 border border-[#262626] hover:border-sky-500/50 rounded text-xs font-semibold transition-all mb-2 shadow-sm"
+                                  >
+                                      <Users className="w-3.5 h-3.5" />
+                                      {track.splits?.length ? 'Editar Splits' : 'Configurar Splits'}
+                                  </button>
                                 </div>
+
                                 {trackAssets[track.id]?.splitSheet ? (
                                     <div className="flex items-center gap-2 text-purple-400 text-xs bg-purple-950/30 px-2 py-2 rounded border border-purple-900/50 justify-between">
                                         <div className="flex items-center gap-1 overflow-hidden">
@@ -190,8 +225,8 @@ export const StepAssets = ({
                                 ) : (
                                     <div className="relative">
                                         <input type="file" accept=".pdf" id={`split-${track.id}`} onChange={(e) => handleTrackAssetUpload(track.id, 'splitSheet', e)} className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" />
-                                        <label htmlFor={`split-${track.id}`} className="cursor-pointer flex items-center justify-center gap-2 px-3 py-2 bg-dark-800 hover:bg-dark-700 border border-dashed border-dark-600 rounded text-xs text-slate-300 transition-colors w-full">
-                                            <Icons.Upload /> Track Split
+                                        <label htmlFor={`split-${track.id}`} className="cursor-pointer flex items-center justify-center gap-2 px-3 py-1.5 bg-dark-800 hover:bg-dark-700 border border-dashed border-dark-600 rounded text-[11px] text-slate-400 transition-colors w-full">
+                                            <Icons.Upload /> Split Sheet PDF (Opt)
                                         </label>
                                     </div>
                                 )}
@@ -231,6 +266,22 @@ export const StepAssets = ({
                 {areAllTracksUploaded() ? 'Submit Release' : 'Upload Audio for All Tracks'}
             </button>
         </div>
+
+        {/* Modal de Configuración de Splits */}
+        {activeSplitTrackId && (
+            <SplitsModal
+                isOpen={!!activeSplitTrackId}
+                onClose={() => setActiveSplitTrackId(null)}
+                onSave={(splits) => handleSaveSplits(activeSplitTrackId, splits)}
+                trackTitle={
+                    formData.tracks?.find(t => t.id === activeSplitTrackId)?.title ||
+                    'Track Seleccionado'
+                }
+                initialSplits={
+                    formData.tracks?.find(t => t.id === activeSplitTrackId)?.splits || []
+                }
+            />
+        )}
     </div>
   );
 };

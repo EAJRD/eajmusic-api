@@ -36,8 +36,10 @@ before((done) => {
 
 after((done) => {
   try {
-    if (originalCatalogContent) {
-      fs.writeFileSync(CATALOG_FILE, originalCatalogContent, 'utf-8');
+    if (originalCatalogContent && originalCatalogContent.trim().startsWith('[')) {
+      const tmp = `${CATALOG_FILE}.tmp.${process.pid}.${Date.now()}`;
+      fs.writeFileSync(tmp, originalCatalogContent, 'utf-8');
+      fs.renameSync(tmp, CATALOG_FILE);
     }
     if (releasesSyncManager) {
       releasesSyncManager.reset();

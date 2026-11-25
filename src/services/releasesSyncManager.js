@@ -47,13 +47,15 @@ export class ReleasesSyncManager {
     try {
       if (fs.existsSync(this.catalogPath)) {
         const raw = fs.readFileSync(this.catalogPath, 'utf-8');
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+        if (raw && raw.trim().length > 0) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
         }
       }
     } catch (err) {
-      console.warn('⚠️ [ReleasesSyncManager] No se pudo leer archivo de catálogo inicial:', err.message);
+      // Fallback limpio a releases en memoria
     }
     return [...fallback];
   }
@@ -64,7 +66,9 @@ export class ReleasesSyncManager {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      fs.writeFileSync(this.catalogPath, JSON.stringify(this.releases, null, 2), 'utf-8');
+      const tmpPath = `${this.catalogPath}.tmp.${process.pid}.${Date.now()}`;
+      fs.writeFileSync(tmpPath, JSON.stringify(this.releases, null, 2), 'utf-8');
+      fs.renameSync(tmpPath, this.catalogPath);
     } catch (err) {
       console.warn('⚠️ [ReleasesSyncManager] Error al persistir catalog_synced.json:', err.message);
     }

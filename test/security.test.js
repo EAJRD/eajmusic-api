@@ -40,19 +40,30 @@ test('SEC-02: CORS permite explícitamente eaj.eajmusic.com', async () => {
   assert.strictEqual(res.headers.get('access-control-allow-credentials'), 'true');
 });
 
-test('SEC-03: CORS permite variantes con www y http de dominios autorizados', async () => {
-  const origins = [
+test('SEC-03: CORS permite variantes con www en HTTPS y rechaza http:// inseguro', async () => {
+  const secureOrigins = [
     'https://www.artist.eajmusic.com',
-    'http://artist.eajmusic.com',
-    'https://www.eaj.eajmusic.com',
-    'http://eaj.eajmusic.com'
+    'https://www.eaj.eajmusic.com'
   ];
-  for (const origin of origins) {
+  for (const origin of secureOrigins) {
     const res = await fetch(`${BASE_URL}/health`, {
       headers: { Origin: origin }
     });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(res.headers.get('access-control-allow-origin'), origin);
+  }
+
+  // http:// sin TLS debe ser rechazado bajo la directiva HTTPS estricto
+  const insecureOrigins = [
+    'http://artist.eajmusic.com',
+    'http://eaj.eajmusic.com'
+  ];
+  for (const origin of insecureOrigins) {
+    const res = await fetch(`${BASE_URL}/health`, {
+      headers: { Origin: origin }
+    });
+    assert.strictEqual(res.status, 200);
+    assert.strictEqual(res.headers.get('access-control-allow-origin'), null);
   }
 });
 

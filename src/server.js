@@ -10,6 +10,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { applyCorsHeaders, handleCorsPreflight, isAllowedOrigin, ALLOWED_ORIGINS_LIST } from './security/cors.js';
+import { checkRateLimit, RATE_LIMIT_CONFIG } from './security/rateLimiter.js';
+import { pool, checkPostgresHealth, getReleasesFromDB, POSTGRES_CONFIG } from './db/postgres.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -256,26 +259,29 @@ export function verifyInsforgeToken(token) {
   return payload;
 }
 
-// Configuración CORS estándar de producción
-function setCorsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+// Configuración CORS segura de producción
+function setCorsHeaders(res, req) {
+  if (req) {
+    applyCorsHeaders(req, res);
+  }
 }
 
-function sendJson(res, statusCode, data) {
-  setCorsHeaders(res);
+function sendJson(res, statusCode, data, req) {
+  if (req) setCorsHeaders(res, req);
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data, null, 2));
 }
 
 // Servidor HTTP Principal
 const server = http.createServer(async (req, res) => {
-  setCorsHeaders(res);
-
+  // Manejo de preflight OPTIONS y CORS seguro
   if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
+    return handleCorsPreflight(req, res);
+  }
+  applyCorsHeaders(req, res);
+
+  // Rate Limiting por IP (100 req/min por defecto)
+  if (!checkRateLimit(req, res)) {
     return;
   }
 
@@ -286,10 +292,21 @@ const server = http.createServer(async (req, res) => {
   try {
     // 1. Health Check
     if (pathname === '/health' || pathname === '/api/health' || pathname === '/v1/health') {
+      const pgHealth = await checkPostgresHealth();
       return sendJson(res, 200, {
         status: 'ok',
         service: 'EAJMUSIC API Production Engine',
         version: '1.2.0',
+        cors: {
+          status: 'hardened',
+          allowed_origins: ALLOWED_ORIGINS_LIST
+        },
+        rate_limit: {
+          enabled: true,
+          window_ms: RATE_LIMIT_CONFIG.windowMs,
+          max: RATE_LIMIT_CONFIG.max
+        },
+        postgres: pgHealth,
         insforge: {
           active_host: INSFORGE_CONFIG.url,
           app_key: INSFORGE_CONFIG.appKey,
@@ -297,7 +314,7 @@ const server = http.createServer(async (req, res) => {
         },
         timestamp: new Date().toISOString(),
         uptime_seconds: process.uptime()
-      });
+      }, req);
     }
 
     // 1.1 Sincronización de Usuario con InsForge (/auth/sync-insforge-user)
@@ -556,15 +573,21 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 4. Lanzamientos / Releases (/v1/releases)
-    if (pathname === '/v1/releases' || pathname === '/api/v1/releases') {
+    // 4. Lanzamientos / Releases (/api/releases, /releases, /v1/releases, /api/v1/releases)
+    if (
+      pathname === '/api/releases' ||
+      pathname === '/releases' ||
+      pathname === '/v1/releases' ||
+      pathname === '/api/v1/releases'
+    ) {
       if (method === 'GET') {
         const catalog = getSyncedCatalog();
-        return sendJson(res, 200, { success: true, releases: catalog });
+        const releases = await getReleasesFromDB(catalog);
+        return sendJson(res, 200, { success: true, releases }, req);
       }
       if (method === 'POST') {
         const body = await parseJsonBody(req);
-        if (!body.title) return sendJson(res, 400, { error: 'El título del lanzamiento es obligatorio' });
+        if (!body.title) return sendJson(res, 400, { error: 'El título del lanzamiento es obligatorio' }, req);
 
         const newRelease = {
           id: `rel_eaj_${crypto.randomBytes(4).toString('hex')}`,
@@ -580,7 +603,7 @@ const server = http.createServer(async (req, res) => {
           tracks: body.tracks || []
         };
         DB.releases.unshift(newRelease);
-        return sendJson(res, 201, { success: true, release: newRelease });
+        return sendJson(res, 201, { success: true, release: newRelease }, req);
       }
     }
 

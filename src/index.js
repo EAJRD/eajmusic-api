@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import express from 'express';
-import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
@@ -28,6 +27,7 @@ import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { authenticate } from './middleware/auth.js';
 import { sanitizeQuery } from './middleware/query.js';
 import { csrfProtection } from './middleware/csrf.js';
+import { corsMiddleware, enforceHttps } from './middleware/cors.js';
 import { parseUploadKey, localUploadPath, canReadUpload } from './utils/fileAccess.js';
 
 // Initialize
@@ -44,28 +44,16 @@ app.set('trust proxy', 1);
 // MIDDLEWARE
 // ===========================================
 
+// Enforce HTTPS-only for *.eajmusic.com in production and proxy environments
+app.use(enforceHttps);
+
 // Security headers
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 
-// CORS
-const corsOrigins = process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3000'];
-app.use(cors({
-  origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, curl, etc)
-    if (!origin) return callback(null, true);
-    if (corsOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
-      return callback(null, true);
-    }
-    const err = new Error('Not allowed by CORS');
-    err.statusCode = 403;
-    callback(err);
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-Id', 'X-CSRF-Token', 'Idempotency-Key'],
-}));
+// CORS - OWASP Hardened, HTTPS-only for *.eajmusic.com, no wildcards
+app.use(corsMiddleware());
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));

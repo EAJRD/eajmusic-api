@@ -1,0 +1,35 @@
+{
+  "total_streams": 1845200,
+  "monthly_listeners": 142800,
+  "total_royalties_usd": 7196.28,
+  "daily_streams": [
+    {
+      "date": "2026-10-25",
+      "streams": 28400
+    },
+    {
+      "date": "2026-10-26",
+      "streams": 31200
+    },
+    {
+      "date": "2026-10-27",
+      "streams": 29800
+    },
+    {
+      "date": "2026-10-28",
+      "streams": 34500
+    },
+    {
+      "date": "2026-10-29",
+      "streams": 38900
+    },
+    {
+      "date": "2026-10-30",
+      "streams": 42100
+    },
+    {
+      "date": "2026-10-31",
+      "streams": 45600
+    }
+  ]
+}

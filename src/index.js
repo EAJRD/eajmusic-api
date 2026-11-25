@@ -28,6 +28,7 @@ import publicRoutes from './routes/public.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { authenticate } from './middleware/auth.js';
 import { csrfProtection } from './middleware/csrf.js';
+import { parseUploadKey, localUploadPath, canReadUpload } from './utils/fileAccess.js';
 
 // Initialize
 const app = express();
@@ -121,6 +122,9 @@ const UPLOAD_MIME_TYPES = {
 async function serveUpload(req, res) {
   const { type, filename } = req.params;
   const objectKey = `${type}/${filename}`;
+  if (!await canReadUpload(prisma, req.user, objectKey)) {
+    return res.status(404).json({ error: 'Not Found' });
+  }
   const contentType = UPLOAD_MIME_TYPES[path.extname(filename).toLowerCase()] || 'application/octet-stream';
 
   const minioStream = await getObjectStream(objectKey);
@@ -130,9 +134,9 @@ async function serveUpload(req, res) {
     return minioStream.pipe(res);
   }
 
-  const localPath = path.join(process.env.UPLOAD_DIR || './uploads', type, filename);
-  if (fs.existsSync(localPath)) {
-    return res.sendFile(path.resolve(localPath));
+  const localPath = await localUploadPath(process.env.UPLOAD_DIR || './uploads', objectKey);
+  if (localPath) {
+    return res.sendFile(localPath);
   }
 
   res.status(404).json({ error: 'Not Found', message: 'File not found' });
@@ -147,15 +151,12 @@ async function serveUpload(req, res) {
 // accounts all still use the ui-avatars.com placeholder) - the moment one
 // did, that image would 401 on every public page that renders it.
 function requireAuthUnlessPublicType(req, res, next) {
+  if (!parseUploadKey(`${req.params.type}/${req.params.filename}`)) return res.sendStatus(404);
   if (req.params.type === 'images') return next();
   return authenticate(req, res, next);
 }
 
-if (process.env.NODE_ENV !== 'production') {
-  app.get('/uploads/:type/:filename', serveUpload);
-} else {
-  app.get('/uploads/:type/:filename', requireAuthUnlessPublicType, serveUpload);
-}
+app.get('/uploads/:type/:filename', requireAuthUnlessPublicType, serveUpload);
 
 // CSRF (double-submit cookie) - must run after cookieParser (reads the
 // eajmusic_csrf cookie) and after body parsing is irrelevant here since it

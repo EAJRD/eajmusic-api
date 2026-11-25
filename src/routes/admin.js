@@ -26,6 +26,7 @@ import {
   updateSettingSchema,
 } from '../validators/admin.js';
 import { moderateTestimonialSchema } from '../validators/testimonial.js';
+import { parseUploadKey, localUploadPath } from '../utils/fileAccess.js';
 import { sendEmail, employeeInvitationEmailHtml, EMAIL_FROM } from '../services/emailService.js';
 
 const router = Router();
@@ -450,7 +451,7 @@ router.get('/releases/:id/cover', requirePermission('releases:read'), asyncHandl
   const objectKey = release.coverArtKey
     || (release.coverArtUrl ? release.coverArtUrl.split('/uploads/')[1] : null);
 
-  if (!objectKey) {
+  if (parseUploadKey(objectKey)?.type !== 'images') {
     return res.status(404).json({ error: 'Not Found', message: 'This release has no cover art' });
   }
 
@@ -464,9 +465,9 @@ router.get('/releases/:id/cover', requirePermission('releases:read'), asyncHandl
     return minioStream.pipe(res);
   }
 
-  const localPath = path.join(process.env.UPLOAD_DIR || './uploads', objectKey);
-  if (fs.existsSync(localPath)) {
-    return res.sendFile(path.resolve(localPath));
+  const localPath = await localUploadPath(process.env.UPLOAD_DIR || './uploads', objectKey);
+  if (localPath) {
+    return res.sendFile(localPath);
   }
 
   res.status(404).json({ error: 'Not Found', message: 'Cover art file not found in storage' });

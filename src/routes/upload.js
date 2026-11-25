@@ -11,6 +11,8 @@ import { uploadToDriveAndCleanupLocal } from '../services/n8nFileService.js';
 import { uploadAndCleanupLocal as uploadToMinioAndCleanupLocal } from '../services/minioStorageService.js';
 import { validateAudioFile } from '../utils/audioValidation.js';
 import { validateCoverArt } from '../utils/imageValidation.js';
+import { parseUploadKey, localUploadPath } from '../utils/fileAccess.js';
+import { deleteObject } from '../services/minioStorageService.js';
 
 const router = Router();
 
@@ -427,6 +429,8 @@ router.post('/id-document', authenticate, uploadDocument.single('file'), asyncHa
 router.delete('/:type/:filename', authenticate, asyncHandler(async (req, res) => {
   const { type, filename } = req.params;
 
+  if (!parseUploadKey(`${type}/${filename}`)) return res.sendStatus(400);
+
   if (!['audio', 'images'].includes(type)) {
     return res.status(400).json({
       error: 'Bad Request',
@@ -458,10 +462,11 @@ router.delete('/:type/:filename', authenticate, asyncHandler(async (req, res) =>
     }
   }
 
-  const filePath = path.join(uploadDir, type, filename);
+  const filePath = await localUploadPath(uploadDir, `${type}/${filename}`);
+  const removedRemote = await deleteObject(`${type}/${filename}`);
 
   // Check if file exists
-  if (!fs.existsSync(filePath)) {
+  if (!filePath && !removedRemote) {
     return res.status(404).json({
       error: 'Not Found',
       message: 'File not found',
@@ -469,7 +474,7 @@ router.delete('/:type/:filename', authenticate, asyncHandler(async (req, res) =>
   }
 
   // Delete file
-  fs.unlinkSync(filePath);
+  if (filePath) fs.unlinkSync(filePath);
 
   res.json({
     success: true,

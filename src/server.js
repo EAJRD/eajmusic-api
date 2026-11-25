@@ -259,7 +259,7 @@ export function verifyInsforgeToken(token) {
 // Configuración CORS estándar de producción
 function setCorsHeaders(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, apikey, prefer, x-client-info, Accept');
 }
 
@@ -581,7 +581,17 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
-    // 4.2 Actualización de Estado de Release (/v1/releases/:id/status)
+    // 4.2 Actualización / Mutación PATCH y PUT de Release (/v1/releases/:id)
+    const matchReleaseId = pathname.match(/^\/(?:api\/)?v1\/releases\/([^/]+)$/);
+    if (matchReleaseId && (method === 'PATCH' || method === 'PUT')) {
+      const releaseId = matchReleaseId[1];
+      const body = await parseJsonBody(req);
+      const updated = await releasesSyncManager.patchRelease(releaseId, body);
+      if (!updated) return sendJson(res, 404, { error: 'Lanzamiento no encontrado' });
+      return sendJson(res, 200, { success: true, release: updated });
+    }
+
+    // 4.3 Actualización de Estado de Release (/v1/releases/:id/status)
     const matchStatus = pathname.match(/^\/(?:api\/)?v1\/releases\/([^/]+)\/status$/);
     if (matchStatus) {
       if (method !== 'PUT' && method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });

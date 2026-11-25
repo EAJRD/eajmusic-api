@@ -194,34 +194,56 @@ export class ReleasesSyncManager {
   }
 
   /**
-   * Actualiza el estado de un release (moderación A&R en eaj.eajmusic.com)
+   * Actualiza parcialmente un release mediante PATCH/PUT persistente contra PostgreSQL / InsForge
    */
-  async updateReleaseStatus(id, newStatus, reviewNotes = '') {
+  async patchRelease(id, updates = {}) {
     const release = this.releases.find(r => r.id === id);
     if (!release) return null;
 
-    release.status = newStatus;
-    if (reviewNotes) {
-      release.review_notes = reviewNotes;
+    const allowedFields = [
+      'status',
+      'review_notes',
+      'title',
+      'type',
+      'genre',
+      'label_name',
+      'cover_art_url',
+      'release_date',
+      'tracks',
+      'stores'
+    ];
+
+    for (const field of allowedFields) {
+      if (updates[field] !== undefined) {
+        release[field] = updates[field];
+      }
     }
     release.updated_at = new Date().toISOString();
 
     this.persistCatalog();
 
-    // Notificar reactivamente a todos los suscriptores
+    // Notificar reactivamente a través de SSE a todos los portales
     this.broadcast('RELEASE_STATUS_UPDATED', {
       release,
       id,
-      status: newStatus,
-      review_notes: reviewNotes
+      status: release.status,
+      review_notes: release.review_notes || '',
+      updates
     });
 
-    // Sincronizar actualización con InsForge
+    // Sincronizar con PostgreSQL / InsForge
     this.syncToInsForge(release).catch((err) => {
-      console.warn('⚠️ [InsForge Sync] Advertencia en actualización:', err.message);
+      console.warn('⚠️ [InsForge Sync] Advertencia en patchRelease:', err.message);
     });
 
     return release;
+  }
+
+  /**
+   * Actualiza el estado de un release (moderación A&R en eaj.eajmusic.com)
+   */
+  async updateReleaseStatus(id, newStatus, reviewNotes = '') {
+    return this.patchRelease(id, { status: newStatus, review_notes: reviewNotes });
   }
 
   /**

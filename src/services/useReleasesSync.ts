@@ -103,9 +103,9 @@ export function useReleasesSync(options: UseReleasesSyncOptions = {}) {
     [client]
   );
 
-  const updateStatus = useCallback(
-    async (id: string, status: string, notes?: string) => {
-      const updated = await client.updateReleaseStatus(id, status, notes);
+  const patchRelease = useCallback(
+    async (id: string, updates: Partial<Release>) => {
+      const updated = await client.patchRelease(id, updates);
       setReleases((prev) => prev.map((r) => (r.id === id ? { ...r, ...updated } : r)));
       return updated;
     },
@@ -121,7 +121,8 @@ export function useReleasesSync(options: UseReleasesSyncOptions = {}) {
     createRelease,
     approveRelease,
     rejectRelease,
-    updateStatus
+    updateStatus,
+    patchRelease
   };
 }
 

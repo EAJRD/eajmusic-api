@@ -178,6 +178,19 @@ export class ReleasesSyncClient {
     return data.release;
   }
 
+  async patchRelease(id, updates) {
+    const res = await fetch(`${this.apiBase}/releases/${id}`, {
+      method: 'PATCH',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) {
+      throw new Error(`Error ${res.status} al mutar release con PATCH`);
+    }
+    const data = await res.json();
+    return data.release;
+  }
+
   async updateReleaseStatus(id, status, reviewNotes) {
     const res = await fetch(`${this.apiBase}/releases/${id}/status`, {
       method: 'PUT',

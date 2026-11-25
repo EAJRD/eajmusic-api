@@ -231,6 +231,19 @@ export class ReleasesSyncClient {
     return data.release;
   }
 
+  public async patchRelease(id: string, updates: Partial<Release>): Promise<Release> {
+    const res = await fetch(`${this.apiBase}/releases/${id}`, {
+      method: 'PATCH',
+      headers: this.getAuthHeaders(),
+      body: JSON.stringify(updates)
+    });
+    if (!res.ok) {
+      throw new Error(`Error ${res.status} al mutar release con PATCH`);
+    }
+    const data = await res.json();
+    return data.release;
+  }
+
   /**
    * Actualiza el estado de un lanzamiento (moderación A&R en eaj.eajmusic.com)
    */

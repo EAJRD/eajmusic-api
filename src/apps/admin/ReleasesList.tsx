@@ -76,7 +76,7 @@ const INITIAL_RELEASES: ReleaseItem[] = [
 ];
 
 export const ReleasesList: React.FC = () => {
-  const { releases: liveReleases, approveRelease, rejectRelease } = useReleasesSync();
+  const { releases: liveReleases, approveRelease, rejectRelease, patchRelease } = useReleasesSync();
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [audioPlayer, setAudioPlayer] = useState<HTMLAudioElement | null>(null);
@@ -124,7 +124,10 @@ export const ReleasesList: React.FC = () => {
 
   const handleApprove = async (id: string) => {
     try {
-      await approveRelease(id, 'Aprobado formalmente por el Director A&R.');
+      await patchRelease(id, {
+        status: 'approved',
+        review_notes: 'Aprobado formalmente por el Director A&R.'
+      });
     } catch (e) {
       console.warn('Fallback local approve:', e);
     }
@@ -133,7 +136,10 @@ export const ReleasesList: React.FC = () => {
   const handleReject = async (id: string) => {
     const reason = prompt('Ingrese el motivo del rechazo para notificar al artista:') || 'Metadatos o calidad de audio no satisfacen los estándares del sello.';
     try {
-      await rejectRelease(id, reason);
+      await patchRelease(id, {
+        status: 'rejected',
+        review_notes: reason
+      });
     } catch (e) {
       console.warn('Fallback local reject:', e);
     }

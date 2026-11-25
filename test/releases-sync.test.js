@@ -1,11 +1,12 @@
 /**
- * 🧪 PRUEBAS DE SINCRONIZACIÓN REACTIVA DE RELEASES (InsForge / PostgreSQL)
- * Verifica:
- * 1. SSE Stream reactivo cross-origin (/v1/releases/stream)
- * 2. Notificación en tiempo real entre artist.eajmusic.com y eaj.eajmusic.com
- * 3. Actualización de estado (moderación A&R: aprobación / rechazo)
- * 4. Independencia total de cookies (cross-origin safe vía tokens / CORS)
- * 5. Validación de esquema PostgreSQL / InsForge para la tabla releases
+ * 🧪 [SUITE DE CONTRATO Y REGRESIÓN LOCAL]
+ * SINCRONIZACIÓN REACTIVA DE RELEASES Y EVENTOS SSE
+ *
+ * Clasificación Técnica:
+ * - Tipo: Contrato de interfaz y regresión local.
+ * - Validación: Endpoints /v1/releases/stream, emisión SSE reactiva, CORS estricto HTTPS y esquema relacional.
+ * - Persistencia: Catálogo local desacoplado (data/catalog_synced.json) con failover resiliente.
+ * (Para validación de conectividad e integración viva contra PostgreSQL / InsForge, ver test/insforge-postgres-live.test.js).
  */
 
 import { test, before, after } from 'node:test';
@@ -53,7 +54,7 @@ after((done) => {
   }
 });
 
-test('1. SSE Stream (/v1/releases/stream) responde 200 con cabeceras text/event-stream y CORS abiertas', async () => {
+test('1. SSE Stream (/v1/releases/stream) responde 200 con cabeceras text/event-stream y CORS estricto', async () => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 2000);
 
@@ -71,10 +72,12 @@ test('1. SSE Stream (/v1/releases/stream) responde 200 con cabeceras text/event-
   assert.strictEqual(res.status, 200);
   assert(res.headers.get('content-type')?.includes('text/event-stream'));
   assert.strictEqual(res.headers.get('cache-control'), 'no-cache, no-transform');
-  assert.strictEqual(res.headers.get('access-control-allow-origin'), '*');
+  assert.strictEqual(res.headers.get('access-control-allow-origin'), 'https://artist.eajmusic.com');
+  assert.strictEqual(res.headers.get('access-control-allow-credentials'), 'true');
+  assert.notStrictEqual(res.headers.get('access-control-allow-origin'), '*');
 });
 
-test('2. Peticiones CORS preflight (OPTIONS) hacia /v1/releases y /v1/releases/stream son cross-origin safe', async () => {
+test('2. Peticiones CORS preflight (OPTIONS) hacia /v1/releases y /v1/releases/stream son cross-origin safe con lista blanca HTTPS', async () => {
   const resOptions = await fetch(`${BASE_URL}/v1/releases/stream`, {
     method: 'OPTIONS',
     headers: {
@@ -85,8 +88,32 @@ test('2. Peticiones CORS preflight (OPTIONS) hacia /v1/releases y /v1/releases/s
   });
 
   assert.strictEqual(resOptions.status, 204);
-  assert.strictEqual(resOptions.headers.get('access-control-allow-origin'), '*');
+  assert.strictEqual(resOptions.headers.get('access-control-allow-origin'), 'https://eaj.eajmusic.com');
+  assert.strictEqual(resOptions.headers.get('access-control-allow-credentials'), 'true');
+  assert.notStrictEqual(resOptions.headers.get('access-control-allow-origin'), '*');
   assert(resOptions.headers.get('access-control-allow-methods')?.includes('GET'));
+
+  // Rechazo de origen no autorizado (debe retornar 403 y no otorgar CORS)
+  const resBad = await fetch(`${BASE_URL}/v1/releases/stream`, {
+    method: 'OPTIONS',
+    headers: {
+      'Origin': 'https://evil-unauthorized.com',
+      'Access-Control-Request-Method': 'GET'
+    }
+  });
+  assert.strictEqual(resBad.status, 403);
+  assert.strictEqual(resBad.headers.get('access-control-allow-origin'), null);
+
+  // Rechazo de variante http insegura (debe retornar 403 bajo HTTPS estricto)
+  const resHttp = await fetch(`${BASE_URL}/v1/releases/stream`, {
+    method: 'OPTIONS',
+    headers: {
+      'Origin': 'http://artist.eajmusic.com',
+      'Access-Control-Request-Method': 'GET'
+    }
+  });
+  assert.strictEqual(resHttp.status, 403);
+  assert.strictEqual(resHttp.headers.get('access-control-allow-origin'), null);
 });
 
 test('3. Nuevo release creado desde artist.eajmusic.com se transmite reactivamente por el stream de eventos', async () => {

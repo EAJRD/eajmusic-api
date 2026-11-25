@@ -14,6 +14,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import https from 'node:https';
+import { isAllowedOrigin } from '../security/cors.js';
 
 export class ReleasesSyncManager {
   /**
@@ -89,17 +90,38 @@ export class ReleasesSyncManager {
 
   /**
    * Suscribe a un cliente HTTP a Server-Sent Events (SSE).
-   * Cross-Origin Safe: No requiere cookies. Funciona mediante CORS y tokens en Authorization.
+   * Cross-Origin Safe: No requiere cookies. Funciona mediante CORS dinámico de lista blanca y tokens en Authorization.
    */
   addClient(req, res) {
-    res.writeHead(200, {
+    const origin = req.headers['origin'];
+
+    if (origin && !isAllowedOrigin(origin)) {
+      res.writeHead(403, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Vary': 'Origin'
+      });
+      res.end(JSON.stringify({
+        error: 'Forbidden',
+        message: `CORS Policy: Origin '${origin}' no está autorizado para acceder al stream reactivo.`
+      }, null, 2));
+      return;
+    }
+
+    const headers = {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization, apikey, prefer, x-client-info',
-      'Access-Control-Allow-Methods': 'GET, OPTIONS'
-    });
+      'Vary': 'Origin'
+    };
+
+    if (origin && isAllowedOrigin(origin)) {
+      headers['Access-Control-Allow-Origin'] = origin;
+      headers['Access-Control-Allow-Credentials'] = 'true';
+      headers['Access-Control-Allow-Headers'] = 'Origin, X-Requested-With, Content-Type, Accept, Authorization, apikey, prefer, x-client-info';
+      headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS';
+    }
+
+    res.writeHead(200, headers);
 
     // Enviar evento de conexión exitosa inicial
     const connectedEvent = {
@@ -250,7 +272,7 @@ export class ReleasesSyncManager {
    * Upsert a tabla PostgreSQL `releases` vía endpoint PostgREST de InsForge
    */
   async syncToInsForge(release) {
-    if (!this.insforgeUrl || !this.insforgeApiKey) return;
+    if (!this.insforgeUrl || !this.insforgeApiKey) return false;
 
     const endpoint = `${this.insforgeUrl.replace(/\/+$/, '')}/rest/v1/releases`;
     const payload = JSON.stringify([
@@ -273,7 +295,7 @@ export class ReleasesSyncManager {
       const isHttps = url.protocol === 'https:';
       const transport = isHttps ? https : http;
 
-      await new Promise((resolve, reject) => {
+      return await new Promise((resolve) => {
         const req = transport.request(
           url,
           {
@@ -298,7 +320,7 @@ export class ReleasesSyncManager {
           }
         );
 
-        req.on('error', (err) => resolve(false));
+        req.on('error', () => resolve(false));
         req.on('timeout', () => {
           req.destroy();
           resolve(false);
@@ -309,6 +331,7 @@ export class ReleasesSyncManager {
       });
     } catch (e) {
       // Resiliencia local ante caídas de red o endpoints externos
+      return false;
     }
   }
 }

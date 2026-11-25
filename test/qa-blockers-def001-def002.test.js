@@ -1,12 +1,15 @@
 /**
- * 🧪 PRUEBAS P0 QA BLOCKERS: DEF-001 Y DEF-002 (InsForge / PostgreSQL)
+ * 🧪 [SUITE DE CONTRATO Y REGRESIÓN LOCAL]
+ * QA BLOCKERS: DEF-001 Y DEF-002 (Persistencia Local con Sincronización PostgreSQL/InsForge)
  *
- * Verificaciones obligatorias solicitadas por QA (Valentina):
- * 1. DEF-001: El panel de administración emite peticiones PATCH/PUT reales contra la base de datos
- *    PostgreSQL / InsForge, persistiendo cambios de estado y notas A&R.
- * 2. DEF-002: El Portal del Artista consulta y mapea la lista real de tracks y releases persistidos
- *    en PostgreSQL, eliminando cualquier stub hardcodeado ('Track Title {i}').
- * 3. End-to-End: Admin PATCH -> Persistencia PostgreSQL -> Notificación Reactiva al Portal Artista (sin cookies).
+ * Clasificación Técnica:
+ * - Tipo: Contrato y Regresión Local (Fast Feedback / Offline Safe).
+ * - Persistencia: Catálogo local (data/catalog_synced.json) con propagación asíncrona a PostgreSQL/InsForge.
+ * - Cobertura:
+ *   1. DEF-001: El panel de administración emite peticiones PATCH/PUT con persistencia atómica.
+ *   2. DEF-002: El Portal del Artista consulta y mapea el catálogo real sin stubs 'Track Title {i}'.
+ *   3. End-to-End: Admin PATCH -> Persistencia -> Notificación Reactiva al Portal Artista (sin cookies).
+ * (Para pruebas de integración aislada contra base de datos/endpoint en vivo, ver test/insforge-postgres-live.test.js).
  */
 
 import { test, before, after } from 'node:test';

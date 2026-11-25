@@ -1,1 +1,0 @@
-const e="eajmusic_pending_registration";function r(t){try{sessionStorage.setItem(e,JSON.stringify(t))}catch{}}function i(t){try{const n=sessionStorage.getItem(e);if(!n)return null;const s=JSON.parse(n);return s.email===t?s:null}catch{return null}}function a(){try{sessionStorage.removeItem(e)}catch{}}export{a as c,i as g,r as s};

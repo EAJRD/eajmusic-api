@@ -175,7 +175,7 @@ async function retryPayout(tx, ticket) {
 
   const payout = await tx.payout.findUnique({
     where: { id: ticket.relatedPayoutId },
-    select: { id: true, status: true },
+    select: { id: true, status: true, walletId: true, amount: true },
   });
   if (!payout) {
     throw new WorkflowEffectError('El payout asociado ya no existe.', 'PAYOUT_NOT_FOUND');
@@ -187,10 +187,18 @@ async function retryPayout(tx, ticket) {
     );
   }
 
-  await tx.payout.update({
-    where: { id: payout.id },
+  const claimed = await tx.payout.updateMany({
+    where: { id: payout.id, status: 'FAILED' },
     data: { status: 'PENDING', failureReason: null },
   });
+  if (claimed.count !== 1) throw new WorkflowEffectError('El payout ya cambió.', 'PAYOUT_NOT_FAILED');
+  // FAIL refunds the original reservation. A retry must reserve it again
+  // in this same transaction before the payout returns to the queue.
+  const reserved = await tx.wallet.updateMany({
+    where: { id: payout.walletId, availableBalance: { gte: payout.amount } },
+    data: { availableBalance: { decrement: payout.amount } },
+  });
+  if (reserved.count !== 1) throw new WorkflowEffectError('Saldo insuficiente para reintentar.', 'INSUFFICIENT_AVAILABLE');
 
   return { payoutId: payout.id, previousStatus: payout.status, newStatus: 'PENDING' };
 }

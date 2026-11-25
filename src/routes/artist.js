@@ -1,3 +1,4 @@
+import { requireOwnedUpload } from '../utils/fileAccess.js';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { prisma } from '../lib/prisma.js';
@@ -13,6 +14,9 @@ import { detectContributorMatches } from '../services/contributorMatchService.js
 import crypto from 'crypto';
 import { sendEmail, labelInvitationEmailHtml, EMAIL_FROM } from '../services/emailService.js';
 import { getOrCreateDefaultLabelId } from '../services/labelService.js';
+
+import { editTracks, submissionIssues } from '../services/releaseEditing.js';
+import { requestPayout, serialTransaction } from "../services/payoutService.js";
 
 const router = Router();
 
@@ -75,6 +79,9 @@ router.post('/onboarding', asyncHandler(async (req, res) => {
   if (!idDocumentUrl) {
     return res.status(400).json({ error: 'Bad Request', message: 'Sube un documento de identificación oficial.' });
   }
+
+  if (!idDocumentKey) return res.status(400).json({ error: 'An uploaded identity document is required' });
+  await requireOwnedUpload(prisma, req.user.id, idDocumentKey, 'documents');
 
   await prisma.$transaction(async (tx) => {
     await tx.user.update({
@@ -322,6 +329,12 @@ router.post('/releases', requireOnboarded, validate(createReleaseSchema), asyncH
     }
   }
 
+  await requireOwnedUpload(prisma, req.user.id, coverArtKey, 'images');
+  for (const track of tracks) await requireOwnedUpload(prisma, req.user.id, track.audioKey, 'audio');
+  if (labelId && !await prisma.label.findFirst({ where: { id: labelId, OR: [{ userId: req.user.id }, { managedArtists: { some: { id: req.user.id } } }] } })) {
+    return res.status(403).json({ error: 'Label does not belong to this account' });
+  }
+
   // req.user.subscription already has this - authenticate() selects it, no
   // need for a second round-trip to the same row.
   const subscription = req.user.subscription;
@@ -475,8 +488,12 @@ router.patch('/releases/:id', validate(updateReleaseSchema), asyncHandler(async 
     }
   }
 
-  const updatedRelease = await prisma.release.update({
-    where: { id: req.params.id },
+  await requireOwnedUpload(prisma, req.user.id, coverArtKey, 'images');
+  for (const track of tracks || []) await requireOwnedUpload(prisma, req.user.id, track.audioKey, 'audio');
+
+  const updatedRelease = await serialTransaction(prisma, async tx => {
+    await tx.release.update({
+    where: { id: req.params.id, userId: req.user.id, status: { in: ['DRAFT', 'REJECTED'] } },
     data: {
       ...(title && { title }),
       ...(version !== undefined && { version }),
@@ -498,10 +515,9 @@ router.patch('/releases/:id', validate(updateReleaseSchema), asyncHandler(async 
       ...(coverArtKey !== undefined && { coverArtKey }),
       ...(status && { status }),
     },
-    include: {
-      tracks: true,
-      artistProfile: { select: { name: true } },
-    },
+    });
+    await editTracks(tx, req.params.id, tracks);
+    return tx.release.findUnique({ where: { id: req.params.id }, include: { tracks: { include: { contributors: true } }, artistProfile: { select: { name: true } } } });
   });
 
   // Matches frontend's `api.patch<Release>('/artist/releases/:id', ...)` contract.
@@ -510,62 +526,23 @@ router.patch('/releases/:id', validate(updateReleaseSchema), asyncHandler(async 
 
 // Submit release for review
 router.post('/releases/:id/submit', requireOnboarded, validate(submitReleaseSchema), asyncHandler(async (req, res) => {
-  const release = await prisma.release.findFirst({
-    where: {
-      id: req.params.id,
-      userId: req.user.id,
-    },
-    include: { tracks: true },
-  });
-
-  if (!release) {
-    return res.status(404).json({
-      error: 'Not Found',
-      message: 'Release not found',
+  const updatedRelease = await serialTransaction(prisma, async tx => {
+    const release = await tx.release.findFirst({
+      where: { id: req.params.id, userId: req.user.id },
+      include: { tracks: { include: { contributors: true } } },
     });
-  }
-
-  if (release.status !== 'DRAFT') {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Release has already been submitted',
+    if (!release) throw Object.assign(new Error('Release not found'), { statusCode: 404 });
+    if (release.status === 'PENDING') return release;
+    if (!['DRAFT', 'REJECTED'].includes(release.status)) throw Object.assign(new Error('Release cannot be submitted in this state'), { statusCode: 409 });
+    const issues = submissionIssues(release, req.user.subscription);
+    if (issues.length) throw Object.assign(new Error(issues.join('; ')), { statusCode: 400 });
+    const updated = await tx.release.update({
+      where: { id: release.id, status: release.status },
+      data: { status: 'PENDING', submittedAt: new Date() },
+      include: { tracks: true },
     });
-  }
-
-  // Validate release has required data
-  if (release.tracks.length === 0) {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Release must have at least one track',
-    });
-  }
-
-  if (!release.coverArtUrl && !release.coverArtKey) {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Release must have cover artwork',
-    });
-  }
-
-  // Submit for review
-  const updatedRelease = await prisma.release.update({
-    where: { id: req.params.id },
-    data: {
-      status: 'PENDING',
-      submittedAt: new Date(),
-    },
-    include: { tracks: true },
-  });
-
-  // Audit log
-  await prisma.auditLog.create({
-    data: {
-      userId: req.user.id,
-      action: 'RELEASE_SUBMITTED',
-      entityType: 'Release',
-      entityId: release.id,
-      ipAddress: req.ip,
-    },
+    await tx.auditLog.create({ data: { userId: req.user.id, action: 'RELEASE_SUBMITTED', entityType: 'Release', entityId: release.id, ipAddress: req.ip } });
+    return updated;
   });
 
   res.json({
@@ -849,54 +826,8 @@ router.get('/wallet', asyncHandler(async (req, res) => {
 }));
 
 router.post('/wallet/request-payout', asyncHandler(async (req, res) => {
-  const { amount, method, methodDetails } = req.body;
-
-  const wallet = await prisma.wallet.findUnique({
-    where: { userId: req.user.id },
-  });
-
-  if (!wallet) {
-    return res.status(404).json({
-      error: 'Not Found',
-      message: 'Wallet not found',
-    });
-  }
-
-  if (amount > Number(wallet.availableBalance)) {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Insufficient balance',
-    });
-  }
-
-  if (amount < Number(wallet.minPayoutThreshold)) {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: `Minimum payout amount is $${wallet.minPayoutThreshold}`,
-    });
-  }
-
-  // Create payout request
-  const payout = await prisma.$transaction(async (tx) => {
-    // Deduct from available balance
-    await tx.wallet.update({
-      where: { userId: req.user.id },
-      data: {
-        availableBalance: { decrement: amount },
-      },
-    });
-
-    // Create payout record
-    return tx.payout.create({
-      data: {
-        userId: req.user.id,
-        walletId: wallet.id,
-        amount,
-        method,
-        methodDetails,
-        status: 'PENDING',
-      },
-    });
+  const payout = await requestPayout(prisma, req.user.id, {
+    ...req.body, idempotencyKey: req.get('Idempotency-Key') || req.body.idempotencyKey,
   });
 
   // Matches frontend's `api.post<{success, payoutId}>('/artist/wallet/request-payout', ...)` contract.
@@ -914,7 +845,7 @@ router.post('/wallet/request-payout', asyncHandler(async (req, res) => {
     payoutId: payout.id,
     userId: req.user.id,
     amount: payout.amount,
-    currency: wallet.currency || 'USD',
+    currency: payout.currency || 'USD',
     requestedAt: payout.requestedAt,
   });
 }));

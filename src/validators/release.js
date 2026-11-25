@@ -52,7 +52,7 @@ function checkContributorRules(contributors, ctx) {
   }
 }
 
-const trackSchema = z.object({
+const trackObjectSchema = z.object({
   title: z.string().min(1, 'Track title is required').max(500),
   version: z.string().max(100).optional().nullable(),
   trackNumber: z.number().int().positive(),
@@ -63,7 +63,16 @@ const trackSchema = z.object({
   lyricsLanguage: z.string().length(2).optional().nullable(),
   audioKey: z.string().optional().nullable(), // S3 key or local path
   contributors: z.array(contributorSchema).optional().default([]),
-}).superRefine((track, ctx) => checkContributorRules(track.contributors, ctx));
+});
+const trackSchema = trackObjectSchema.superRefine((track, ctx) => checkContributorRules(track.contributors, ctx));
+const editTrackSchema = trackObjectSchema.partial().extend({
+  title: trackObjectSchema.shape.title,
+  trackNumber: trackObjectSchema.shape.trackNumber,
+  id: z.string().uuid().optional(),
+  contributors: z.array(contributorSchema).optional(),
+}).superRefine((track, ctx) => {
+  if (track.contributors) checkContributorRules(track.contributors, ctx);
+});
 
 export const createReleaseSchema = z.object({
   // Basic info
@@ -113,7 +122,12 @@ export const createReleaseSchema = z.object({
 });
 
 export const updateReleaseSchema = createReleaseSchema.partial().extend({
-  status: z.enum(['DRAFT', 'PENDING']).optional(),
+  status: z.literal('DRAFT').optional(),
+  tracks: z.array(editTrackSchema).min(1).refine(tracks => {
+    const positions = tracks.map(track => `${track.discNumber || 1}:${track.trackNumber}`);
+    const ids = tracks.filter(track => track.id).map(track => track.id);
+    return new Set(positions).size === positions.length && new Set(ids).size === ids.length;
+  }, 'Track identities and positions must be unique').optional(),
 });
 
 export const submitReleaseSchema = z.object({

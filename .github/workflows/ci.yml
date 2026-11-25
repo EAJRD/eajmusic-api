@@ -9,6 +9,24 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: audit
+          POSTGRES_PASSWORD: synthetic-ci-only
+          POSTGRES_DB: eajmusic_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U audit -d eajmusic_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://audit:synthetic-ci-only@127.0.0.1:5432/eajmusic_test
+      EAJ_TEST_DATABASE_URL: postgresql://audit:synthetic-ci-only@127.0.0.1:5432/eajmusic_test
+      NODE_ENV: test
 
     steps:
       - name: Checkout
@@ -26,5 +44,8 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
-      - name: Run unit tests
+      - name: Apply migrations to isolated test database
+        run: npx prisma migrate deploy
+
+      - name: Run behavioral and isolated database tests
         run: npm test

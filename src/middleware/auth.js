@@ -29,11 +29,15 @@ export const authenticate = async (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    if (decoded.type !== 'access' || typeof decoded.sid !== 'string' || typeof decoded.userId !== 'string') {
+      return res.status(401).json({ error: 'Unauthorized', message: 'Invalid access token' });
+    }
 
     // Verify session exists and is valid
     const session = await prisma.session.findFirst({
       where: {
+        id: decoded.sid,
         userId: decoded.userId,
         expiresAt: { gt: new Date() },
       },
@@ -130,7 +134,12 @@ export const optionalAuth = async (req, res, next) => {
       return next();
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
+    if (decoded.type !== 'access' || typeof decoded.sid !== 'string' || typeof decoded.userId !== 'string') return next();
+    const session = await prisma.session.findFirst({
+      where: { id: decoded.sid, userId: decoded.userId, expiresAt: { gt: new Date() } },
+    });
+    if (!session) return next();
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },

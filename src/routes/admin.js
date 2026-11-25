@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import fs from 'fs';
 import path from 'path';
 import { prisma } from '../lib/prisma.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
@@ -26,7 +25,10 @@ import {
   updateSettingSchema,
 } from '../validators/admin.js';
 import { moderateTestimonialSchema } from '../validators/testimonial.js';
+import { parseUploadKey, localUploadPath } from '../utils/fileAccess.js';
 import { sendEmail, employeeInvitationEmailHtml, EMAIL_FROM } from '../services/emailService.js';
+
+import { processPayout, importCompletedPayout, conflict } from "../services/payoutService.js";
 
 const router = Router();
 
@@ -450,7 +452,7 @@ router.get('/releases/:id/cover', requirePermission('releases:read'), asyncHandl
   const objectKey = release.coverArtKey
     || (release.coverArtUrl ? release.coverArtUrl.split('/uploads/')[1] : null);
 
-  if (!objectKey) {
+  if (parseUploadKey(objectKey)?.type !== 'images') {
     return res.status(404).json({ error: 'Not Found', message: 'This release has no cover art' });
   }
 
@@ -464,9 +466,9 @@ router.get('/releases/:id/cover', requirePermission('releases:read'), asyncHandl
     return minioStream.pipe(res);
   }
 
-  const localPath = path.join(process.env.UPLOAD_DIR || './uploads', objectKey);
-  if (fs.existsSync(localPath)) {
-    return res.sendFile(path.resolve(localPath));
+  const localPath = await localUploadPath(process.env.UPLOAD_DIR || './uploads', objectKey);
+  if (localPath) {
+    return res.sendFile(localPath);
   }
 
   res.status(404).json({ error: 'Not Found', message: 'Cover art file not found in storage' });
@@ -615,60 +617,8 @@ router.get('/payouts', requirePermission('payouts:read'), asyncHandler(async (re
 }));
 
 router.post('/payouts/:id/process', requirePermission('payouts:process'), asyncHandler(async (req, res) => {
-  const { action, transactionId, failureReason } = req.body;
-
-  const payout = await prisma.payout.findUnique({
-    where: { id: req.params.id },
-  });
-
-  if (!payout) {
-    return res.status(404).json({
-      error: 'Not Found',
-      message: 'Payout not found',
-    });
-  }
-
-  if (payout.status !== 'PENDING') {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Payout is not pending',
-    });
-  }
-
-  if (action === 'COMPLETE') {
-    await prisma.payout.update({
-      where: { id: req.params.id },
-      data: {
-        status: 'COMPLETED',
-        processedAt: new Date(),
-        transactionId,
-      },
-    });
-  } else if (action === 'FAIL') {
-    await prisma.$transaction(async (tx) => {
-      await tx.payout.update({
-        where: { id: req.params.id },
-        data: {
-          status: 'FAILED',
-          processedAt: new Date(),
-          failureReason,
-        },
-      });
-
-      // Refund to wallet
-      await tx.wallet.update({
-        where: { id: payout.walletId },
-        data: {
-          availableBalance: { increment: payout.amount },
-        },
-      });
-    });
-  }
-
-  res.json({
-    success: true,
-    message: `Payout ${action === 'COMPLETE' ? 'completed' : 'failed'}`,
-  });
+  const payout = await processPayout(prisma, req.params.id, req.body);
+  res.json({ success: true, message: 'Payout processed', payout });
 }));
 
 // ===========================================
@@ -676,199 +626,21 @@ router.post('/payouts/:id/process', requirePermission('payouts:process'), asyncH
 // ===========================================
 router.post('/payouts/bulk-complete', requirePermission('payouts:process'), asyncHandler(async (req, res) => {
   const { payouts } = req.body;
-
-  if (!payouts || !Array.isArray(payouts) || payouts.length === 0) {
-    return res.status(400).json({
-      error: 'Bad Request',
-      message: 'Payouts array is required',
-    });
+  if (!Array.isArray(payouts) || payouts.length === 0 || payouts.length > 500) {
+    return res.status(400).json({ error: 'Provide between 1 and 500 payout records' });
   }
-
-  // Validate the payouts array structure
-  const validMethods = ['paypal', 'bank_transfer', 'wire', 'check', 'crypto', 'wise', 'payoneer'];
   const results = [];
-  let successCount = 0;
-  let failCount = 0;
-
-  // Process each payout record
   for (const record of payouts) {
-    const { email, amount, method, transactionId } = record;
-
     try {
-      // Validate required fields
-      if (!email || !amount || !method || !transactionId) {
-        results.push({
-          email: email || 'unknown',
-          success: false,
-          message: 'Missing required fields',
-        });
-        failCount++;
-        continue;
-      }
-
-      // Validate method
-      if (!validMethods.includes(method.toLowerCase())) {
-        results.push({
-          email,
-          success: false,
-          message: `Invalid payment method: ${method}`,
-        });
-        failCount++;
-        continue;
-      }
-
-      // Find user by email
-      const user = await prisma.user.findUnique({
-        where: { email: email.toLowerCase() },
-        include: { wallet: true },
-      });
-
-      if (!user) {
-        results.push({
-          email,
-          success: false,
-          message: 'User not found',
-        });
-        failCount++;
-        continue;
-      }
-
-      if (!user.wallet) {
-        results.push({
-          email,
-          success: false,
-          message: 'User wallet not found',
-        });
-        failCount++;
-        continue;
-      }
-
-      // Check for existing pending payout that matches the amount
-      const pendingPayout = await prisma.payout.findFirst({
-        where: {
-          userId: user.id,
-          status: 'PENDING',
-          amount: {
-            gte: parseFloat(amount) - 0.01,
-            lte: parseFloat(amount) + 0.01,
-          },
-        },
-        orderBy: { requestedAt: 'desc' },
-      });
-
-      if (pendingPayout) {
-        // Update existing payout to COMPLETED
-        await prisma.payout.update({
-          where: { id: pendingPayout.id },
-          data: {
-            status: 'COMPLETED',
-            processedAt: new Date(),
-            transactionId,
-            method: method.toLowerCase(),
-          },
-        });
-
-        // Audit log
-        await prisma.auditLog.create({
-          data: {
-            userId: req.user.id,
-            action: 'PAYOUT_BULK_COMPLETED',
-            entityType: 'Payout',
-            entityId: pendingPayout.id,
-            newValues: {
-              email,
-              amount: parseFloat(amount),
-              transactionId,
-              method: method.toLowerCase(),
-            },
-            ipAddress: req.ip,
-          },
-        });
-
-        results.push({
-          email,
-          success: true,
-          message: 'Existing pending payout marked as completed',
-          payoutId: pendingPayout.id,
-        });
-        successCount++;
-      } else {
-        // Create a new completed payout record (for reconciliation/historical tracking)
-        const newPayout = await prisma.payout.create({
-          data: {
-            userId: user.id,
-            walletId: user.wallet.id,
-            amount: parseFloat(amount),
-            method: method.toLowerCase(),
-            methodDetails: { source: 'csv_import', originalMethod: method },
-            status: 'COMPLETED',
-            processedAt: new Date(),
-            transactionId,
-          },
-        });
-
-        // Audit log
-        await prisma.auditLog.create({
-          data: {
-            userId: req.user.id,
-            action: 'PAYOUT_BULK_CREATED',
-            entityType: 'Payout',
-            entityId: newPayout.id,
-            newValues: {
-              email,
-              amount: parseFloat(amount),
-              transactionId,
-              method: method.toLowerCase(),
-            },
-            ipAddress: req.ip,
-          },
-        });
-
-        results.push({
-          email,
-          success: true,
-          message: 'New completed payout record created',
-          payoutId: newPayout.id,
-        });
-        successCount++;
-      }
+      const payout = await importCompletedPayout(prisma, record, req.user.id);
+      results.push({ email: record.email, success: true, payoutId: payout.id });
     } catch (error) {
-      console.error(`Error processing payout for ${email}:`, error);
-      results.push({
-        email,
-        success: false,
-        message: error.message || 'Internal processing error',
-      });
-      failCount++;
+      const message = error.name === 'ZodError' ? 'Invalid payout record' : (error.statusCode ? error.message : 'Payout could not be imported');
+      results.push({ email: record?.email || 'unknown', success: false, message });
     }
   }
-
-  // Create a bulk import audit log
-  await prisma.auditLog.create({
-    data: {
-      userId: req.user.id,
-      action: 'PAYOUT_BULK_IMPORT',
-      entityType: 'Payout',
-      entityId: null,
-      newValues: {
-        totalRecords: payouts.length,
-        successCount,
-        failCount,
-      },
-      ipAddress: req.ip,
-    },
-  });
-
-  res.json({
-    success: true,
-    message: `Processed ${payouts.length} payouts: ${successCount} successful, ${failCount} failed`,
-    results,
-    summary: {
-      total: payouts.length,
-      successful: successCount,
-      failed: failCount,
-    },
-  });
+  const successful = results.filter(result => result.success).length;
+  res.json({ success: true, results, summary: { total: payouts.length, successful, failed: payouts.length - successful } });
 }));
 
 // ===========================================
@@ -1281,7 +1053,7 @@ router.post('/reversals/:id/approve', requirePermission('reversals:approve'), as
 
   if (decision === 'REJECT') {
     const rejected = await prisma.financialReversal.update({
-      where: { id: reversal.id },
+      where: { id: reversal.id, status: 'PENDING' },
       data: {
         status: 'REJECTED',
         approvedById: req.user.id,
@@ -1306,6 +1078,11 @@ router.post('/reversals/:id/approve', requirePermission('reversals:approve'), as
   }
 
   const executed = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.financialReversal.updateMany({
+      where: { id: reversal.id, status: 'PENDING' },
+      data: { status: 'APPROVED', approvedById: req.user.id },
+    });
+    if (claimed.count !== 1) throw conflict('Reversal was already decided');
     const wallet = await tx.wallet.findUnique({ where: { id: reversal.walletId } });
     if (!wallet) {
       throw Object.assign(new Error('La wallet asociada ya no existe.'), { statusCode: 400 });
@@ -1320,10 +1097,12 @@ router.post('/reversals/:id/approve', requirePermission('reversals:approve'), as
       );
     }
 
-    const updatedWallet = await tx.wallet.update({
-      where: { id: wallet.id },
+    const debited = await tx.wallet.updateMany({
+      where: { id: wallet.id, availableBalance: { gte: value } },
       data: { availableBalance: { decrement: value } },
     });
+    if (debited.count !== 1) throw conflict('Insufficient balance');
+    const updatedWallet = await tx.wallet.findUnique({ where: { id: wallet.id } });
 
     const updated = await tx.financialReversal.update({
       where: { id: reversal.id },

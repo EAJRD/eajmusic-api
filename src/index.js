@@ -5,7 +5,6 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import cookieParser from 'cookie-parser';
 import rateLimit from 'express-rate-limit';
-import fs from 'fs';
 import path from 'path';
 import { prisma } from './lib/prisma.js';
 import { getObjectStream } from './services/minioStorageService.js';
@@ -27,7 +26,9 @@ import publicRoutes from './routes/public.js';
 // Import middleware
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 import { authenticate } from './middleware/auth.js';
+import { sanitizeQuery } from './middleware/query.js';
 import { csrfProtection } from './middleware/csrf.js';
+import { parseUploadKey, localUploadPath, canReadUpload } from './utils/fileAccess.js';
 
 // Initialize
 const app = express();
@@ -53,12 +54,7 @@ const corsOrigins = process.env.CORS_ORIGINS?.split(',') || ['http://localhost:3
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (mobile apps, curl, etc)
-    if (!origin) {
-      if (process.env.NODE_ENV === 'development') return callback(null, true);
-      const err = new Error('Origin required');
-      err.statusCode = 403;
-      return callback(err);
-    }
+    if (!origin) return callback(null, true);
     if (corsOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
       return callback(null, true);
     }
@@ -68,7 +64,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-Id', 'X-CSRF-Token'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Session-Id', 'X-CSRF-Token', 'Idempotency-Key'],
 }));
 
 // Body parsing
@@ -121,6 +117,9 @@ const UPLOAD_MIME_TYPES = {
 async function serveUpload(req, res) {
   const { type, filename } = req.params;
   const objectKey = `${type}/${filename}`;
+  if (!await canReadUpload(prisma, req.user, objectKey)) {
+    return res.status(404).json({ error: 'Not Found' });
+  }
   const contentType = UPLOAD_MIME_TYPES[path.extname(filename).toLowerCase()] || 'application/octet-stream';
 
   const minioStream = await getObjectStream(objectKey);
@@ -130,9 +129,9 @@ async function serveUpload(req, res) {
     return minioStream.pipe(res);
   }
 
-  const localPath = path.join(process.env.UPLOAD_DIR || './uploads', type, filename);
-  if (fs.existsSync(localPath)) {
-    return res.sendFile(path.resolve(localPath));
+  const localPath = await localUploadPath(process.env.UPLOAD_DIR || './uploads', objectKey);
+  if (localPath) {
+    return res.sendFile(localPath);
   }
 
   res.status(404).json({ error: 'Not Found', message: 'File not found' });
@@ -147,15 +146,12 @@ async function serveUpload(req, res) {
 // accounts all still use the ui-avatars.com placeholder) - the moment one
 // did, that image would 401 on every public page that renders it.
 function requireAuthUnlessPublicType(req, res, next) {
+  if (!parseUploadKey(`${req.params.type}/${req.params.filename}`)) return res.sendStatus(404);
   if (req.params.type === 'images') return next();
   return authenticate(req, res, next);
 }
 
-if (process.env.NODE_ENV !== 'production') {
-  app.get('/uploads/:type/:filename', serveUpload);
-} else {
-  app.get('/uploads/:type/:filename', requireAuthUnlessPublicType, serveUpload);
-}
+app.get('/uploads/:type/:filename', requireAuthUnlessPublicType, serveUpload);
 
 // CSRF (double-submit cookie) - must run after cookieParser (reads the
 // eajmusic_csrf cookie) and after body parsing is irrelevant here since it
@@ -170,14 +166,7 @@ app.use(csrfProtection);
 // GET /admin/users and GET /admin/releases in production. The frontend was
 // fixed to stop sending this, but strip it here too so any other caller
 // (old cached bundle, direct API use) can't trigger the same class of bug.
-app.use((req, res, next) => {
-  for (const key of Object.keys(req.query)) {
-    if (req.query[key] === 'undefined' || req.query[key] === 'null') {
-      delete req.query[key];
-    }
-  }
-  next();
-});
+app.use(sanitizeQuery);
 
 // ===========================================
 // ROUTES

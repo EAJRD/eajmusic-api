@@ -17,15 +17,15 @@ const router = Router();
 // Generate tokens. Access tokens are short-lived by design (they live in a
 // cookie sent on every request); refresh tokens are long-lived and only
 // used against POST /auth/refresh.
-const generateTokens = (userId, rememberMe = false) => {
+const generateTokens = (userId, sessionId, rememberMe = false) => {
   const accessToken = jwt.sign(
-    { userId },
+    { userId, sid: sessionId, type: 'access' },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
   );
 
   const refreshToken = jwt.sign(
-    { userId, type: 'refresh' },
+    { userId, sid: sessionId, type: 'refresh', jti: crypto.randomUUID() },
     process.env.JWT_SECRET,
     { expiresIn: rememberMe ? '30d' : process.env.JWT_REFRESH_EXPIRES_IN || '30d' }
   );
@@ -191,12 +191,14 @@ router.post('/sync-insforge-user', asyncHandler(async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized', message: 'This account has been deleted.' });
   }
 
-  const { accessToken, refreshToken } = generateTokens(user.id, true);
+  const sessionId = crypto.randomUUID();
+  const { accessToken, refreshToken } = generateTokens(user.id, sessionId, true);
 
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 30);
   await prisma.session.create({
     data: {
+      id: sessionId,
       userId: user.id,
       tokenHash: jwt.sign({ t: Date.now() }, process.env.JWT_SECRET),
       refreshToken,
@@ -440,18 +442,20 @@ router.post('/refresh', asyncHandler(async (req, res) => {
   }
 
   try {
-    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET);
+    const decoded = jwt.verify(refreshToken, process.env.JWT_SECRET, { algorithms: ['HS256'] });
 
-    if (decoded.type !== 'refresh') {
+    if (decoded.type !== 'refresh' || typeof decoded.sid !== 'string' || typeof decoded.userId !== 'string') {
       throw new Error('Invalid token type');
     }
 
     // Find session with this refresh token
     const session = await prisma.session.findFirst({
       where: {
+        id: decoded.sid,
         userId: decoded.userId,
         refreshToken,
         expiresAt: { gt: new Date() },
+        user: { status: 'ACTIVE' },
       },
     });
 
@@ -463,20 +467,20 @@ router.post('/refresh', asyncHandler(async (req, res) => {
     }
 
     // Generate new tokens
-    const { accessToken, refreshToken: newRefreshToken } = generateTokens(decoded.userId);
+    const { accessToken, refreshToken: newRefreshToken } = generateTokens(decoded.userId, session.id);
 
     // Update session
-    const newExpiresAt = new Date();
-    newExpiresAt.setDate(newExpiresAt.getDate() + 7);
+    const newExpiresAt = new Date(jwt.decode(newRefreshToken).exp * 1000);
 
-    await prisma.session.update({
-      where: { id: session.id },
+    const rotated = await prisma.session.updateMany({
+      where: { id: session.id, refreshToken, expiresAt: { gt: new Date() }, user: { status: 'ACTIVE' } },
       data: {
         refreshToken: newRefreshToken,
         expiresAt: newExpiresAt,
         lastActivityAt: new Date(),
       },
     });
+    if (rotated.count !== 1) return res.status(401).json({ error: 'Unauthorized', message: 'Session already refreshed or revoked' });
 
     setAuthCookies(res, { accessToken, refreshToken: newRefreshToken });
 

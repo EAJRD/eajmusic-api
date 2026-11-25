@@ -15,6 +15,11 @@ function fakeTx({ release, wallet, payout } = {}) {
       },
     },
     wallet: {
+      updateMany: async ({ where, data }) => {
+        if (!wallet || Number(wallet.availableBalance) < Number(where.availableBalance?.gte || 0)) return { count: 0 };
+        writes.push({ model: 'wallet', where, data });
+        return { count: 1 };
+      },
       findUnique: async () => (wallet ? { ...wallet } : null),
       update: async ({ where, data }) => {
         writes.push({ model: 'wallet', where, data });
@@ -22,6 +27,11 @@ function fakeTx({ release, wallet, payout } = {}) {
       },
     },
     payout: {
+      updateMany: async ({ where, data }) => {
+        if (!payout || payout.status !== where.status) return { count: 0 };
+        writes.push({ model: 'payout', where, data });
+        return { count: 1 };
+      },
       findUnique: async () => (payout ? { ...payout } : null),
       update: async ({ where, data }) => {
         writes.push({ model: 'payout', where, data });
@@ -138,11 +148,12 @@ describe('royalty holds move money between buckets, never destroy it', () => {
 
 describe('payout retry', () => {
   it('returns a failed payout to the queue', async () => {
-    const tx = fakeTx({ payout: { id: 'p-1', status: 'FAILED' } });
+    const tx = fakeTx({ payout: { id: 'p-1', status: 'FAILED', walletId: 'w-1', amount: 50 }, wallet: { id: 'w-1', availableBalance: 100 } });
     const result = await applyEffect('RETRY_PAYOUT', tx, ticket(), {});
 
     expect(result.newStatus).toBe('PENDING');
     expect(tx.writes[0].data).toEqual({ status: 'PENDING', failureReason: null });
+    expect(tx.writes.find(write => write.model === 'wallet').data).toEqual({ availableBalance: { decrement: 50 } });
   });
 
   it.each(['PENDING', 'PROCESSING', 'COMPLETED'])('refuses to retry a %s payout', async (status) => {

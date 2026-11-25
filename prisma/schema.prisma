@@ -168,6 +168,7 @@ model User {
   reversalsRequested       FinancialReversal[]       @relation("ReversalRequester")
   reversalsApproved        FinancialReversal[]       @relation("ReversalApprover")
   sessions                 Session[]
+  storedUploads            StoredUpload[]
   auditLogs                AuditLog[]
   announcements            Announcement[]
   takedownsResolved        TakedownRequest[]         @relation("TakedownResolver")
@@ -177,6 +178,16 @@ model User {
   artistInvitationsSent    LabelArtistInvitation[]   @relation("InvitationSender")
 
   @@map("users")
+}
+
+model StoredUpload {
+  key       String   @id @db.VarChar(500)
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("stored_uploads")
 }
 
 model ArtistProfile {
@@ -544,6 +555,7 @@ model Payout {
   transactionId String?      @map("transaction_id") @db.VarChar(255)
   failureReason String?      @map("failure_reason") @db.Text
   requestedAt   DateTime     @default(now()) @map("requested_at")
+  idempotencyKey String?     @map("idempotency_key") @db.VarChar(100)
 
   // Relations
   user           User                @relation(fields: [userId], references: [id])
@@ -551,6 +563,8 @@ model Payout {
   relatedTickets SupportTicket[]     @relation("TicketPayout")
   reversals      FinancialReversal[]
 
+  @@unique([userId, idempotencyKey])
+  @@unique([method, transactionId])
   @@map("payouts")
 }
 

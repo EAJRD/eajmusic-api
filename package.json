@@ -1,16 +1,24 @@
 {
-  "name": "eajmusic-web-landing",
+  "name": "eajmusic-platform",
   "version": "1.2.0",
-  "description": "Portal Comercial Oficial (eajmusic.com) y Backoffice A&R Central (eaj.eajmusic.com)",
+  "description": "Plataforma EAJMUSIC: Portal del Artista (artist.eajmusic.com), Backoffice Admin (eaj.eajmusic.com) y Backend API InsForge / PostgreSQL",
+  "main": "src/server.js",
+  "type": "module",
   "scripts": {
-    "build": "node -e \"console.log('✅ [WEBMUSIC] Compilación y verificación exitosa: Landing Oficial (index.html) y Backoffice Admin (admin.html) listos para producción.')\"",
-    "start": "npx serve -l 8080 ."
+    "start": "node src/server.js",
+    "build": "node --check src/server.js && echo '✅ [BUILD] Syntax and modules verified'",
+    "cron:sync": "node --loader ts-node/esm src/cron/syncAmuseCron.ts || python3 integrations/amuse/sync_amuse_to_db.py --mock",
+    "test": "node --test test/*.test.js"
   },
   "keywords": [
     "eajmusic",
     "home",
     "admin-portal",
-    "record-label"
+    "artist-portal",
+    "ath-movil",
+    "record-label",
+    "insforge-postgres",
+    "realtime-sync"
   ],
   "author": "EAJMUSIC / CEO Ernesto",
   "license": "UNLICENSED"

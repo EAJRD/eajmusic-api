@@ -281,13 +281,7 @@ const server = http.createServer(async (req, res) => {
   // Stream Reactivo de Lanzamientos (Server-Sent Events) - Cross-Origin Safe
   if (pathname === '/v1/releases/stream' || pathname === '/api/v1/releases/stream') {
     if (method === 'OPTIONS') {
-      res.writeHead(204, {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization, apikey, prefer, x-client-info',
-        'Access-Control-Allow-Methods': 'GET, OPTIONS'
-      });
-      res.end();
-      return;
+      return handleCorsPreflight(req, res);
     }
     return releasesSyncManager.addClient(req, res);
   }

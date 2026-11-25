@@ -39,11 +39,12 @@ Durante la auditoría inicial de `src/server.js` y la revisión cruzada con los 
 Todos los cambios se implementaron siguiendo la metodología **ub-mode** (primero reproducir con tests fallidos, luego aplicar cambios mínimos y desacoplados).
 
 ### A. Módulo de Seguridad CORS (`src/security/cors.js` - Nuevo, 78 líneas)
-- **Lista blanca estricta:** Implementación de expresiones regulares que permiten exclusivamente:
-  - `https://artist.eajmusic.com`, `http://artist.eajmusic.com` y sus variantes `www`.
-  - `https://eaj.eajmusic.com`, `http://eaj.eajmusic.com` y sus variantes `www`.
+- **Lista blanca estricta (Solo HTTPS):** Implementación de expresiones regulares que permiten exclusivamente:
+  - `https://artist.eajmusic.com` y sus variantes `www`.
+  - `https://eaj.eajmusic.com` y sus variantes `www`.
   - `https://api-api.eajmusic.com` y `https://api.eajmusic.com`.
   - Orígenes locales de desarrollo (`localhost`, `127.0.0.1`).
+  - Bloqueo y rechazo explícito de `http://` no seguro en dominios de producción.
 - **Eliminación del Wildcard:** Bloqueo absoluto de `*`. Si el origen es válido, se refleja dinámicamente el origen exacto (`Access-Control-Allow-Origin: <origin>`).
 - **Preflight `OPTIONS`:** Responde `204 No Content` con `Access-Control-Allow-Credentials: true`, `Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS` y cache `Access-Control-Max-Age: 86400`. Si el origen es desconocido/malicioso, se rechaza con `403 Forbidden`.
 

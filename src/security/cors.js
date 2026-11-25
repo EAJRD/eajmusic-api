@@ -7,12 +7,12 @@
  */
 
 export const ALLOWED_ORIGIN_PATTERNS = [
-  // artist.eajmusic.com y variantes
-  /^https?:\/\/(www\.)?artist\.eajmusic\.com(:[0-9]+)?$/,
-  // eaj.eajmusic.com y variantes
-  /^https?:\/\/(www\.)?eaj\.eajmusic\.com(:[0-9]+)?$/,
-  // api-api.eajmusic.com y api.eajmusic.com
-  /^https?:\/\/(www\.)?api(-api)?\.eajmusic\.com(:[0-9]+)?$/,
+  // artist.eajmusic.com y variantes (solo HTTPS estricto)
+  /^https:\/\/(www\.)?artist\.eajmusic\.com(:[0-9]+)?$/,
+  // eaj.eajmusic.com y variantes (solo HTTPS estricto)
+  /^https:\/\/(www\.)?eaj\.eajmusic\.com(:[0-9]+)?$/,
+  // api-api.eajmusic.com y api.eajmusic.com (solo HTTPS estricto)
+  /^https:\/\/(www\.)?api(-api)?\.eajmusic\.com(:[0-9]+)?$/,
   // Localhost y loopback para desarrollo y testing
   /^https?:\/\/(localhost|127\.0\.0\.1)(:[0-9]+)?$/
 ];
@@ -20,12 +20,8 @@ export const ALLOWED_ORIGIN_PATTERNS = [
 export const ALLOWED_ORIGINS_LIST = [
   'https://artist.eajmusic.com',
   'https://www.artist.eajmusic.com',
-  'http://artist.eajmusic.com',
-  'http://www.artist.eajmusic.com',
   'https://eaj.eajmusic.com',
   'https://www.eaj.eajmusic.com',
-  'http://eaj.eajmusic.com',
-  'http://www.eaj.eajmusic.com',
   'https://api-api.eajmusic.com',
   'https://api.eajmusic.com'
 ];

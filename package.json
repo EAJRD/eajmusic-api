@@ -21,5 +21,8 @@
     "realtime-sync"
   ],
   "author": "EAJMUSIC / CEO Ernesto",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "dependencies": {
+    "pg": "^8.23.1"
+  }
 }

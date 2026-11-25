@@ -11,6 +11,9 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { ReleasesSyncManager } from './services/releasesSyncManager.js';
+import { applyCorsHeaders, handleCorsPreflight, isAllowedOrigin, ALLOWED_ORIGINS_LIST } from './security/cors.js';
+import { checkRateLimit, RATE_LIMIT_CONFIG } from './security/rateLimiter.js';
+import { pool, checkPostgresHealth, getReleasesFromDB, POSTGRES_CONFIG } from './db/postgres.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -256,40 +259,68 @@ export function verifyInsforgeToken(token) {
   return payload;
 }
 
-// Configuración CORS estándar de producción
-function setCorsHeaders(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, apikey, prefer, x-client-info, Accept');
+// Configuración CORS segura de producción
+function setCorsHeaders(res, req) {
+  if (req) {
+    applyCorsHeaders(req, res);
+  }
 }
 
-function sendJson(res, statusCode, data) {
-  setCorsHeaders(res);
+function sendJson(res, statusCode, data, req) {
+  if (req) setCorsHeaders(res, req);
   res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
   res.end(JSON.stringify(data, null, 2));
 }
 
 // Servidor HTTP Principal
 const server = http.createServer(async (req, res) => {
-  setCorsHeaders(res);
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204);
-    res.end();
-    return;
-  }
-
   const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = parsedUrl.pathname;
   const method = req.method;
 
+  // Stream Reactivo de Lanzamientos (Server-Sent Events) - Cross-Origin Safe
+  if (pathname === '/v1/releases/stream' || pathname === '/api/v1/releases/stream') {
+    if (method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization, apikey, prefer, x-client-info',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS'
+      });
+      res.end();
+      return;
+    }
+    return releasesSyncManager.addClient(req, res);
+  }
+
+  // Manejo de preflight OPTIONS y CORS seguro
+  if (method === 'OPTIONS') {
+    return handleCorsPreflight(req, res);
+  }
+  applyCorsHeaders(req, res);
+
+  // Rate Limiting por IP (100 req/min por defecto)
+  if (!checkRateLimit(req, res)) {
+    return;
+  }
+
   try {
     // 1. Health Check
     if (pathname === '/health' || pathname === '/api/health' || pathname === '/v1/health') {
+      const pgHealth = await checkPostgresHealth();
       return sendJson(res, 200, {
         status: 'ok',
         service: 'EAJMUSIC API Production Engine',
         version: '1.2.0',
+        cors: {
+          status: 'hardened',
+          allowed_origins: ALLOWED_ORIGINS_LIST
+        },
+        rate_limit: {
+          enabled: true,
+          window_ms: RATE_LIMIT_CONFIG.windowMs,
+          max: RATE_LIMIT_CONFIG.max
+        },
+        postgres: pgHealth,
         insforge: {
           active_host: INSFORGE_CONFIG.url,
           app_key: INSFORGE_CONFIG.appKey,
@@ -297,7 +328,7 @@ const server = http.createServer(async (req, res) => {
         },
         timestamp: new Date().toISOString(),
         uptime_seconds: process.uptime()
-      });
+      }, req);
     }
 
     // 1.1 Sincronización de Usuario con InsForge (/auth/sync-insforge-user)
@@ -559,36 +590,59 @@ const server = http.createServer(async (req, res) => {
     // 4. Stream Reactivo de Lanzamientos (Server-Sent Events) - Cross-Origin Safe
     if (pathname === '/v1/releases/stream' || pathname === '/api/v1/releases/stream') {
       if (method === 'OPTIONS') {
-        res.writeHead(204);
-        res.end();
-        return;
+        return handleCorsPreflight(req, res);
       }
       return releasesSyncManager.addClient(req, res);
     }
 
-    // 4.1 Lanzamientos / Releases (/v1/releases)
-    if (pathname === '/v1/releases' || pathname === '/api/v1/releases') {
+    // 4.1 Lanzamientos / Releases (/api/releases, /releases, /v1/releases, /api/v1/releases)
+    if (
+      pathname === '/api/releases' ||
+      pathname === '/releases' ||
+      pathname === '/v1/releases' ||
+      pathname === '/api/v1/releases'
+    ) {
       if (method === 'GET') {
         const catalog = releasesSyncManager.getReleases();
-        return sendJson(res, 200, { success: true, releases: catalog });
+        const releases = await getReleasesFromDB(catalog);
+        return sendJson(res, 200, { success: true, releases }, req);
       }
       if (method === 'POST') {
         const body = await parseJsonBody(req);
-        if (!body.title) return sendJson(res, 400, { error: 'El título del lanzamiento es obligatorio' });
+        if (!body.title) return sendJson(res, 400, { error: 'El título del lanzamiento es obligatorio' }, req);
 
-        const newRelease = await releasesSyncManager.createRelease(body);
-        return sendJson(res, 201, { success: true, release: newRelease });
+        if (pathname.includes('/v1/')) {
+          const newRelease = await releasesSyncManager.createRelease(body);
+          DB.releases.unshift(newRelease);
+          return sendJson(res, 201, { success: true, release: newRelease }, req);
+        }
+
+        const newRelease = {
+          id: `rel_eaj_${crypto.randomBytes(4).toString('hex')}`,
+          artist_id: body.artist_id || 'art_eaj_001',
+          title: body.title,
+          type: body.type || 'single',
+          upc: `73000${Math.floor(10000000 + Math.random() * 90000000)}`,
+          status: 'draft',
+          release_date: body.release_date || new Date().toISOString().split('T')[0],
+          cover_art_url: body.cover_art_url || '',
+          genre: body.genre || 'Urbano / Alternativo',
+          label_name: body.label_name || 'EAJMUSIC Records',
+          tracks: body.tracks || []
+        };
+        DB.releases.unshift(newRelease);
+        return sendJson(res, 201, { success: true, release: newRelease }, req);
       }
     }
 
     // 4.2 Actualización / Mutación PATCH y PUT de Release (/v1/releases/:id)
-    const matchReleaseId = pathname.match(/^\/(?:api\/)?v1\/releases\/([^/]+)$/);
+    const matchReleaseId = pathname.match(/^\/(?:api\/)?(?:v1\/)?releases\/([^/]+)$/);
     if (matchReleaseId && (method === 'PATCH' || method === 'PUT')) {
       const releaseId = matchReleaseId[1];
       const body = await parseJsonBody(req);
       const updated = await releasesSyncManager.patchRelease(releaseId, body);
-      if (!updated) return sendJson(res, 404, { error: 'Lanzamiento no encontrado' });
-      return sendJson(res, 200, { success: true, release: updated });
+      if (!updated) return sendJson(res, 404, { error: 'Lanzamiento no encontrado' }, req);
+      return sendJson(res, 200, { success: true, release: updated }, req);
     }
 
     // 4.3 Actualización de Estado de Release (/v1/releases/:id/status)

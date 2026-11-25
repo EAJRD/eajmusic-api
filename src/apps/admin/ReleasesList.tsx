@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useReleasesSync } from '../../services/useReleasesSync';
 
 interface ReleaseItem {
   id: string;
@@ -75,10 +76,38 @@ const INITIAL_RELEASES: ReleaseItem[] = [
 ];
 
 export const ReleasesList: React.FC = () => {
-  const [releases, setReleases] = useState<ReleaseItem[]>(INITIAL_RELEASES);
+  const { releases: liveReleases, approveRelease, rejectRelease } = useReleasesSync();
   const [filter, setFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [audioPlayer, setAudioPlayer] = useState<HTMLAudioElement | null>(null);
+
+  // Mapear lanzamientos del backend combinándolos con la lista inicial
+  const mappedReleases: ReleaseItem[] = liveReleases.length > 0
+    ? liveReleases.map((r: any) => {
+        const rawStatus = (r.status || 'draft').toUpperCase();
+        const normalizedStatus: 'PENDING' | 'APPROVED' | 'REJECTED' =
+          rawStatus === 'APPROVED' || rawStatus === 'RELEASED'
+            ? 'APPROVED'
+            : rawStatus === 'REJECTED'
+            ? 'REJECTED'
+            : 'PENDING';
+
+        return {
+          id: r.id,
+          title: r.title,
+          artist: r.artist_name || r.artist || 'Kaelo & EAJ Collective',
+          upc: r.upc || 'Pendiente',
+          isrc: r.isrc || (r.tracks?.[0]?.isrc || 'QZDA42600001'),
+          type: r.type ? r.type.toUpperCase() : 'SINGLE',
+          genre: r.genre || 'Urbano / Alternativo',
+          status: normalizedStatus,
+          coverUrl: r.cover_art_url || r.coverUrl || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800',
+          audioPreviewUrl: r.tracks?.[0]?.preview_url || r.audioPreviewUrl || 'https://cdn.freesound.org/previews/612/612610_5674468-lq.mp3',
+          submissionDate: r.release_date || (r.created_at ? r.created_at.split('T')[0] : '2026-11-24'),
+          reviewNotes: r.review_notes || ''
+        };
+      })
+    : INITIAL_RELEASES;
 
   const handlePlay = (id: string, url: string) => {
     if (playingId === id) {
@@ -93,20 +122,24 @@ export const ReleasesList: React.FC = () => {
     }
   };
 
-  const handleApprove = (id: string) => {
-    setReleases(prev =>
-      prev.map(r => (r.id === id ? { ...r, status: 'APPROVED', reviewNotes: 'Aprobado formalmente por el Director A&R.' } : r))
-    );
+  const handleApprove = async (id: string) => {
+    try {
+      await approveRelease(id, 'Aprobado formalmente por el Director A&R.');
+    } catch (e) {
+      console.warn('Fallback local approve:', e);
+    }
   };
 
-  const handleReject = (id: string) => {
+  const handleReject = async (id: string) => {
     const reason = prompt('Ingrese el motivo del rechazo para notificar al artista:') || 'Metadatos o calidad de audio no satisfacen los estándares del sello.';
-    setReleases(prev =>
-      prev.map(r => (r.id === id ? { ...r, status: 'REJECTED', reviewNotes: reason } : r))
-    );
+    try {
+      await rejectRelease(id, reason);
+    } catch (e) {
+      console.warn('Fallback local reject:', e);
+    }
   };
 
-  const filtered = releases.filter(r => (filter === 'ALL' ? true : r.status === filter));
+  const filtered = mappedReleases.filter(r => (filter === 'ALL' ? true : r.status === filter));
 
   return (
     <div style={{ background: '#121217', borderRadius: 16, padding: '1.75rem', border: '1px solid #23232f' }}>

@@ -1040,7 +1040,7 @@
       const genre = document.getElementById('releaseGenre').value;
 
       try {
-        await fetch(`${API_BASE}/releases`, {
+        const res = await fetch(`${API_BASE}/releases`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1051,17 +1051,105 @@
             cover_art_url: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800'
           })
         });
-      } catch (e) {}
+
+        if (res.ok) {
+          const result = await res.json();
+          // Notificar vía canal local
+          if (broadcastSyncChannel) {
+            broadcastSyncChannel.postMessage({ type: 'RELEASE_CREATED', release: result.release });
+          }
+        }
+      } catch (err) {
+        console.warn('Error enviando release al backend:', err);
+      }
 
       alert(`✅ ¡Lanzamiento "${title}" recibido! Se ha generado tu código UPC y enviado a validación DDEX para entrega a DSPs.`);
       switchView('catalog');
       loadCatalog();
     }
 
+    // SINCRONIZACIÓN REACTIVA EN TIEMPO REAL (SSE + BroadcastChannel)
+    let syncEventSource = null;
+    let broadcastSyncChannel = null;
+
+    function initReactiveSync() {
+      // 1. Canal local entre pestañas (cross-tab safe)
+      if ('BroadcastChannel' in window) {
+        try {
+          broadcastSyncChannel = new BroadcastChannel('eaj_releases_sync_channel');
+          broadcastSyncChannel.onmessage = (event) => {
+            handleSyncEvent(event.data);
+          };
+        } catch (e) {}
+      }
+
+      // 2. Stream reactivo SSE cross-origin seguro
+      try {
+        syncEventSource = new EventSource(`${API_BASE}/releases/stream`);
+
+        syncEventSource.addEventListener('RELEASE_CREATED', (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            handleSyncEvent(data);
+          } catch (err) {}
+        });
+
+        syncEventSource.addEventListener('RELEASE_STATUS_UPDATED', (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            handleSyncEvent(data);
+          } catch (err) {}
+        });
+
+        syncEventSource.onerror = () => {
+          syncEventSource.close();
+          setTimeout(initReactiveSync, 5000); // Reintento automático
+        };
+      } catch (err) {
+        console.warn('SSE no disponible:', err);
+      }
+    }
+
+    function handleSyncEvent(event) {
+      if (!event) return;
+
+      if (event.type === 'RELEASE_STATUS_UPDATED' && event.release) {
+        const title = event.release.title;
+        const status = event.release.status;
+        const statusLabel = status === 'approved' ? '¡Aprobado para DSPs!' : status === 'rejected' ? 'Revisión requerida' : status;
+        
+        // Recargar catálogo reactivamente
+        loadCatalog();
+
+        // Notificación sutil en pantalla
+        const notification = document.createElement('div');
+        notification.style.cssText = `
+          position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+          background: #181822; border: 1px solid #e5b358; border-radius: 12px;
+          padding: 1rem 1.25rem; color: #fff; font-size: 0.88rem;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 0.75rem;
+          animation: slideUp 0.3s ease;
+        `;
+        notification.innerHTML = `
+          <span style="font-size: 1.2rem;">⚡</span>
+          <div>
+            <strong>Actualización A&R en Vivo:</strong> "${title}" ahora está <span style="color:#e5b358; font-weight:700;">${statusLabel}</span>
+          </div>
+        `;
+        document.body.appendChild(notification);
+        setTimeout(() => notification.remove(), 5000);
+      }
+
+      if (event.type === 'RELEASE_CREATED') {
+        loadCatalog();
+      }
+    }
+
     // INICIALIZACIÓN
     window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('releaseDate').value = new Date().toISOString().split('T')[0];
       loadCatalog();
+      initReactiveSync();
     });
   </script>
 </body>

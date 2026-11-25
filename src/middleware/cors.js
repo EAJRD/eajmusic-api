@@ -7,7 +7,8 @@ import cors from 'cors';
  * - Permite exclusivamente orígenes HTTPS para *.eajmusic.com
  * - Rechaza explícitamente peticiones HTTP inseguras y comodín (*)
  * - Permite peticiones sin Origin (curl, apps móviles, server-to-server)
- * - Permite localhost solo en desarrollo/testing o si está explícitamente configurado
+ * - Restringe customOrigins en producción exclusivamente a HTTPS bajo eajmusic.com
+ * - Bloquea host spoofing y open redirect en enforceHttps
  */
 
 const ALLOWED_PRODUCTION_PATTERNS = [
@@ -20,6 +21,8 @@ const ALLOWED_PRODUCTION_PATTERNS = [
 const LOCALHOST_PATTERNS = [
   /^https?:\/\/(localhost|127\.0\.0\.1)(:[0-9]+)?$/,
 ];
+
+const VALID_HOSTNAME_PATTERN = /^[a-z0-9-]+(\.[a-z0-9-]+)*$/;
 
 /**
  * Valida si un Origin recibido cumple con la política estricta
@@ -50,10 +53,30 @@ export function isAllowedOrigin(origin, options = {}) {
     ? options.customOrigins
     : (process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map(s => s.trim()) : null);
 
-  // Si hay orígenes personalizados configurados
+  if (env === 'production') {
+    // En producción:
+    // 1. Rechaza SIEMPRE HTTP (http://...)
+    // 2. Rechaza localhost / 127.0.0.1
+    // 3. customOrigins solo permite orígenes https:// autorizados bajo eajmusic.com
+    if (customOrigins && customOrigins.length > 0 && customOrigins.includes(trimmed)) {
+      try {
+        const parsed = new URL(trimmed);
+        if (parsed.protocol === 'https:') {
+          const hostname = parsed.hostname.toLowerCase();
+          if (hostname === 'eajmusic.com' || hostname.endsWith('.eajmusic.com')) {
+            return true;
+          }
+        }
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  // En development y test:
   if (customOrigins && customOrigins.length > 0) {
     if (customOrigins.includes(trimmed)) {
-      // Re-verificar que si es eajmusic.com, sea HTTPS
       if (/eajmusic\.com/i.test(trimmed) && !trimmed.startsWith('https://')) {
         return false;
       }
@@ -61,11 +84,8 @@ export function isAllowedOrigin(origin, options = {}) {
     }
   }
 
-  // Localhost / 127.0.0.1 solo en desarrollo o test
-  if (env !== 'production') {
-    if (LOCALHOST_PATTERNS.some(p => p.test(trimmed))) {
-      return true;
-    }
+  if (LOCALHOST_PATTERNS.some(p => p.test(trimmed))) {
+    return true;
   }
 
   return false;
@@ -92,18 +112,74 @@ export function corsMiddleware() {
 }
 
 /**
+ * Normaliza y valida un host recibido para evitar Host spoofing
+ */
+function normalizeAndValidateHost(rawHost) {
+  if (!rawHost || typeof rawHost !== 'string') return null;
+
+  // Toma el primer valor si x-forwarded-host tiene comas
+  const firstValue = rawHost.split(',')[0].trim();
+  if (!firstValue) return null;
+
+  // Separa hostname y puerto
+  let hostname = firstValue;
+  if (hostname.includes(':')) {
+    const parts = hostname.split(':');
+    hostname = parts[0];
+    const port = parts[1];
+    if (port && !/^[0-9]+$/.test(port)) {
+      return null;
+    }
+  }
+
+  hostname = hostname.trim().toLowerCase();
+
+  // Valida que el hostname sea un nombre DNS válido
+  if (!VALID_HOSTNAME_PATTERN.test(hostname)) {
+    return null;
+  }
+
+  return hostname;
+}
+
+/**
+ * Normaliza y sanitiza el pathname/query para evitar Open Redirect en Location
+ */
+function sanitizeRedirectPath(originalUrl) {
+  if (!originalUrl || typeof originalUrl !== 'string') return '/';
+
+  // Si tiene caracteres de escape o backslashes, los normaliza
+  let sanitized = originalUrl.replace(/\\/g, '/');
+
+  // Si no empieza con '/', lo fuerza a relativo
+  if (!sanitized.startsWith('/')) {
+    sanitized = '/' + sanitized;
+  }
+
+  // Si empieza con múltiples slashes (//evil.com), reduce a un solo slash
+  sanitized = sanitized.replace(/^\/+/, '/');
+
+  return sanitized;
+}
+
+/**
  * Middleware para forzar HTTPS en dominios de producción (*.eajmusic.com)
  */
 export function enforceHttps(req, res, next) {
-  const host = (req.headers['x-forwarded-host'] || req.hostname || req.headers.host || '').split(':')[0];
-  if (host.endsWith('eajmusic.com')) {
+  const rawHost = req.headers['x-forwarded-host'] || req.hostname || req.headers.host || '';
+  const host = normalizeAndValidateHost(rawHost);
+
+  // Acepta ÚNICAMENTE host exacto 'eajmusic.com' o subdominio con punto '*.eajmusic.com'
+  if (host && (host === 'eajmusic.com' || host.endsWith('.eajmusic.com'))) {
     const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
     if (!isHttps) {
       if (req.method === 'GET' || req.method === 'HEAD') {
-        return res.redirect(301, `https://${host}${req.originalUrl}`);
+        const safePath = sanitizeRedirectPath(req.originalUrl);
+        return res.redirect(301, `https://${host}${safePath}`);
       }
       return res.status(403).json({ error: 'HTTPS required' });
     }
   }
+
   next();
 }

@@ -63,13 +63,28 @@ describe('CORS and HTTPS-only policy for EAJMusic', () => {
     }
   });
 
-  it('allows localhost in development and test environments, but not in production unless configured', () => {
+  it('allows localhost in development and test environments, but not in production even if configured in customOrigins', () => {
     expect(isAllowedOrigin('http://localhost:3000', { env: 'development' })).toBe(true);
     expect(isAllowedOrigin('http://localhost:5173', { env: 'test' })).toBe(true);
     expect(isAllowedOrigin('http://127.0.0.1:3000', { env: 'development' })).toBe(true);
 
+    // En producción, localhost / 127.0.0.1 debe ser RECHAZADO siempre, incluso si viene en customOrigins
     expect(isAllowedOrigin('http://localhost:3000', { env: 'production' })).toBe(false);
-    expect(isAllowedOrigin('http://localhost:3000', { env: 'production', customOrigins: ['http://localhost:3000'] })).toBe(true);
+    expect(isAllowedOrigin('http://localhost:3000', { env: 'production', customOrigins: ['http://localhost:3000'] })).toBe(false);
+    expect(isAllowedOrigin('https://localhost:3000', { env: 'production', customOrigins: ['https://localhost:3000'] })).toBe(false);
+  });
+
+  it('strictly validates customOrigins in production (only HTTPS under eajmusic.com allowed)', () => {
+    // Inseguros o externos en producción con customOrigins deben ser rechazados
+    expect(isAllowedOrigin('http://artist.eajmusic.com', { env: 'production', customOrigins: ['http://artist.eajmusic.com'] })).toBe(false);
+    expect(isAllowedOrigin('https://external-attacker.com', { env: 'production', customOrigins: ['https://external-attacker.com'] })).toBe(false);
+    expect(isAllowedOrigin('https://evil.com', { env: 'production', customOrigins: ['https://evil.com'] })).toBe(false);
+    expect(isAllowedOrigin('https://eajmusic.com.evil.com', { env: 'production', customOrigins: ['https://eajmusic.com.evil.com'] })).toBe(false);
+    expect(isAllowedOrigin('https://attackereajmusic.com', { env: 'production', customOrigins: ['https://attackereajmusic.com'] })).toBe(false);
+
+    // Subdominio válido de EAJMusic HTTPS en producción con customOrigins es permitido
+    expect(isAllowedOrigin('https://staging.eajmusic.com', { env: 'production', customOrigins: ['https://staging.eajmusic.com'] })).toBe(true);
+    expect(isAllowedOrigin('https://admin-preview.eajmusic.com', { env: 'production', customOrigins: ['https://admin-preview.eajmusic.com'] })).toBe(true);
   });
 
   it('integrates with Express HTTP and reflects allowed origin while rejecting disallowed', async () => {
@@ -117,7 +132,7 @@ describe('CORS and HTTPS-only policy for EAJMusic', () => {
     }
   });
 
-  it('enforces HTTPS requests for *.eajmusic.com hosts', async () => {
+  it('enforces HTTPS requests for *.eajmusic.com hosts and prevents host spoofing & open redirect', async () => {
     const app = express();
     app.set('trust proxy', 1);
     app.use(enforceHttps);
@@ -129,7 +144,7 @@ describe('CORS and HTTPS-only policy for EAJMusic', () => {
 
     try {
       // Insecure request to eajmusic.com gets redirected or rejected
-      const resInsecureGet = await fetch(`${base}/api/ping`, {
+      const resInsecureGet = await fetch(`${base}/api/ping?query=1`, {
         headers: {
           'X-Forwarded-Host': 'artist.eajmusic.com',
           'X-Forwarded-Proto': 'http'
@@ -137,7 +152,7 @@ describe('CORS and HTTPS-only policy for EAJMusic', () => {
         redirect: 'manual'
       });
       expect(resInsecureGet.status).toBe(301);
-      expect(resInsecureGet.headers.get('location')).toBe('https://artist.eajmusic.com/api/ping');
+      expect(resInsecureGet.headers.get('location')).toBe('https://artist.eajmusic.com/api/ping?query=1');
 
       const resInsecurePost = await fetch(`${base}/api/ping`, {
         method: 'POST',
@@ -157,6 +172,74 @@ describe('CORS and HTTPS-only policy for EAJMusic', () => {
       });
       expect(resSecure.status).toBe(200);
       expect(await resSecure.json()).toEqual({ pong: true });
+
+      // Host spoofing: attackereajmusic.com (NO debe ser tratado como eajmusic.com ni redirigido a https://attackereajmusic.com)
+      const resAttackerHost = await fetch(`${base}/api/ping`, {
+        headers: {
+          'X-Forwarded-Host': 'attackereajmusic.com',
+          'X-Forwarded-Proto': 'http'
+        },
+        redirect: 'manual'
+      });
+      // No coincide con eajmusic.com, por ende enforceHttps no redirige hacia el atacante (pasa al siguiente middleware / handler)
+      expect(resAttackerHost.status).toBe(200);
+
+      // Host spoofing: eajmusic.com.evil.com
+      const resSubdomainEvil = await fetch(`${base}/api/ping`, {
+        headers: {
+          'X-Forwarded-Host': 'eajmusic.com.evil.com',
+          'X-Forwarded-Proto': 'http'
+        },
+        redirect: 'manual'
+      });
+      expect(resSubdomainEvil.status).toBe(200);
+
+      // Normalización de host en mayúsculas: EAJMUSIC.COM
+      const resUppercaseHost = await fetch(`${base}/api/ping`, {
+        headers: {
+          'X-Forwarded-Host': 'EAJMUSIC.COM',
+          'X-Forwarded-Proto': 'http'
+        },
+        redirect: 'manual'
+      });
+      expect(resUppercaseHost.status).toBe(301);
+      expect(resUppercaseHost.headers.get('location')).toBe('https://eajmusic.com/api/ping');
+
+      // Múltiples hosts en X-Forwarded-Host: 'artist.eajmusic.com, evil.com'
+      const resMultipleHosts = await fetch(`${base}/api/ping`, {
+        headers: {
+          'X-Forwarded-Host': 'artist.eajmusic.com, evil.com',
+          'X-Forwarded-Proto': 'http'
+        },
+        redirect: 'manual'
+      });
+      expect(resMultipleHosts.status).toBe(301);
+      expect(resMultipleHosts.headers.get('location')).toBe('https://artist.eajmusic.com/api/ping');
+
+      // Intento de Open Redirect vía req.originalUrl malicioso: '//evil.com'
+      const resOpenRedirect = await fetch(`${base}//evil.com`, {
+        headers: {
+          'X-Forwarded-Host': 'artist.eajmusic.com',
+          'X-Forwarded-Proto': 'http'
+        },
+        redirect: 'manual'
+      });
+      // El location debe ser seguro hacia artist.eajmusic.com/ (o /evil.com sanitizado), NUNCA empezar con https://artist.eajmusic.com//evil.com
+      expect(resOpenRedirect.status).toBe(301);
+      const loc = resOpenRedirect.headers.get('location');
+      expect(loc).not.toContain('//evil.com');
+      expect(loc).toBe('https://artist.eajmusic.com/evil.com');
+
+      // Intento con backslash: '/\\evil.com'
+      const resBackslash = await fetch(`${base}/\\evil.com`, {
+        headers: {
+          'X-Forwarded-Host': 'artist.eajmusic.com',
+          'X-Forwarded-Proto': 'http'
+        },
+        redirect: 'manual'
+      });
+      expect(resBackslash.status).toBe(301);
+      expect(resBackslash.headers.get('location')).not.toContain('\\');
     } finally {
       await new Promise(resolve => server.close(resolve));
     }

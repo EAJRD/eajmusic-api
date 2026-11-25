@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { parseUploadKey, localUploadPath, canReadUpload } from './fileAccess.js';
+import { parseUploadKey, localUploadPath, canReadUpload, requireOwnedUpload } from './fileAccess.js';
 
 describe('upload boundaries', () => {
   it('accepts a single filename in a known storage category', () => {
@@ -24,16 +24,23 @@ describe('upload boundaries', () => {
     } finally { await rm(root, { recursive: true, force: true }); }
   });
   it('keeps KYC private to the owner or owner-level administrator', async () => {
-    const db = { user: { findFirst: async ({ where }) => where.id === 'owner' ? { id: 'owner' } : null } };
+    const db = { storedUpload: { findUnique: async () => ({ userId: 'owner' }) }, user: { findFirst: async ({ where }) => where.id === 'owner' ? { id: 'owner' } : null } };
     expect(await canReadUpload(db, { id: 'other', role: 'ARTIST' }, 'documents/id.pdf')).toBe(false);
     expect(await canReadUpload(db, { id: 'owner', role: 'ARTIST' }, 'documents/id.pdf')).toBe(true);
     expect(await canReadUpload(db, { id: 'reviewer', role: 'REVIEWER' }, 'documents/id.pdf')).toBe(false);
     expect(await canReadUpload(db, { id: 'admin', role: 'SUPER_ADMIN' }, 'documents/id.pdf')).toBe(true);
   });
   it('requires ownership or media permission for audio', async () => {
-    const db = { track: { findFirst: async ({ where }) => where.release.userId === 'owner' ? { id: 't' } : null } };
+    const db = { storedUpload: { findUnique: async () => ({ userId: 'owner' }) }, track: { findFirst: async ({ where }) => where.release.userId === 'owner' ? { id: 't' } : null } };
     expect(await canReadUpload(db, { id: 'other', role: 'ARTIST' }, 'audio/sample.wav')).toBe(false);
     expect(await canReadUpload(db, { id: 'owner', role: 'ARTIST' }, 'audio/sample.wav')).toBe(true);
     expect(await canReadUpload(db, { id: 'reviewer', role: 'REVIEWER' }, 'audio/sample.wav')).toBe(true);
+  });
+  it('lets the uploader preview an unattached master and rejects attaching another user asset', async () => {
+    const db = { storedUpload: { findUnique: async () => ({ userId: 'owner' }) } };
+    expect(await canReadUpload(db, { id: 'owner', role: 'ARTIST' }, 'audio/sample.wav')).toBe(true);
+    expect(await canReadUpload(db, { id: 'other', role: 'ARTIST' }, 'audio/sample.wav')).toBe(false);
+    await expect(requireOwnedUpload(db, 'other', 'audio/sample.wav', 'audio')).rejects.toMatchObject({ statusCode: 403 });
+    await expect(requireOwnedUpload(db, 'owner', 'audio/sample.wav', 'audio')).resolves.toBeUndefined();
   });
 });

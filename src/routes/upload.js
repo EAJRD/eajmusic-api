@@ -30,14 +30,11 @@ const getBaseUrl = (req) => process.env.API_URL || `${req.protocol}://${req.get(
 // MinIO before local disk, so the public URL never needs to change for it.
 // Drive is the one case that needs a different, external URL, hence the
 // {url,key} override return value.
-async function storeUploadedFile(localPath, fileKey, mimetype, originalFilename) {
+async function storeUploadedFile(localPath, fileKey, mimetype, originalFilename, userId) {
   const storedInMinio = await uploadToMinioAndCleanupLocal(localPath, fileKey, mimetype);
-  if (storedInMinio) return null;
-
-  const driveResult = await uploadToDriveAndCleanupLocal(localPath, originalFilename, mimetype);
-  if (driveResult) return driveResult;
-
-  return null; // both remote options failed/unconfigured - local file stays put
+  const driveResult = storedInMinio ? null : await uploadToDriveAndCleanupLocal(localPath, originalFilename, mimetype);
+  await prisma.storedUpload.create({ data: { key: driveResult?.key || fileKey, userId } });
+  return driveResult || null;
 }
 
 // ===========================================
@@ -174,7 +171,7 @@ router.post('/audio', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUP
   let fileKey = `audio/${req.file.filename}`;
   let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
 
-  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname);
+  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname, req.user.id);
   if (override) {
     fileUrl = override.url;
     fileKey = override.key;
@@ -268,7 +265,7 @@ router.post('/audio/batch', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN'
     let key = `audio/${file.filename}`;
     let url = `${baseUrl}/uploads/audio/${file.filename}`;
 
-    const override = await storeUploadedFile(file.path, key, file.mimetype, file.originalname);
+    const override = await storeUploadedFile(file.path, key, file.mimetype, file.originalname, req.user.id);
     if (override) {
       url = override.url;
       key = override.key;
@@ -315,7 +312,7 @@ router.post('/cover', authenticate, requireRole('ARTIST', 'LABEL', 'ADMIN', 'SUP
   let fileKey = `images/${req.file.filename}`;
   let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
 
-  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname);
+  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname, req.user.id);
   if (override) {
     fileUrl = override.url;
     fileKey = override.key;
@@ -366,7 +363,7 @@ router.post('/avatar', authenticate, uploadImage.single('file'), asyncHandler(as
   let fileKey = `images/${req.file.filename}`;
   let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
 
-  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname);
+  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname, req.user.id);
   if (override) {
     fileUrl = override.url;
     fileKey = override.key;
@@ -400,7 +397,7 @@ router.post('/id-document', authenticate, uploadDocument.single('file'), asyncHa
   let fileKey = `documents/${req.file.filename}`;
   let fileUrl = `${getBaseUrl(req)}/uploads/${fileKey}`;
 
-  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname);
+  const override = await storeUploadedFile(req.file.path, fileKey, req.file.mimetype, req.file.originalname, req.user.id);
   if (override) {
     fileUrl = override.url;
     fileKey = override.key;
@@ -438,28 +435,10 @@ router.delete('/:type/:filename', authenticate, asyncHandler(async (req, res) =>
     });
   }
 
-  // Ownership check: previously any authenticated user could delete any
-  // uploaded file by knowing/guessing its filename, since this route only
-  // checked `authenticate` and never verified the file belonged to the
-  // caller. Admins bypass this (they may need to clean up on takedowns/user
-  // deletion); everyone else must own the resource the file is attached to
-  // (their own track's audio, their own release's cover art, or their own
-  // avatar).
   const isPrivileged = ['ADMIN', 'SUPER_ADMIN'].includes(req.user.role);
-  if (!isPrivileged) {
-    const fileKey = `${type}/${filename}`;
-    const [ownedTrack, ownedRelease] = await Promise.all([
-      prisma.track.findFirst({ where: { audioKey: fileKey, release: { userId: req.user.id } } }),
-      prisma.release.findFirst({ where: { coverArtKey: fileKey, userId: req.user.id } }),
-    ]);
-    const isOwnAvatar = typeof req.user.avatarUrl === 'string' && req.user.avatarUrl.endsWith(`/${fileKey}`);
-
-    if (!ownedTrack && !ownedRelease && !isOwnAvatar) {
-      return res.status(403).json({
-        error: 'Forbidden',
-        message: 'You do not have permission to delete this file',
-      });
-    }
+  const uploaded = await prisma.storedUpload.findUnique({ where: { key: `${type}/${filename}` } });
+  if (!isPrivileged && uploaded?.userId !== req.user.id) {
+    return res.status(403).json({ error: 'You do not own this upload' });
   }
 
   const filePath = await localUploadPath(uploadDir, `${type}/${filename}`);

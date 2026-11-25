@@ -26,10 +26,18 @@ export async function canReadUpload(db, user, key) {
   if (!parsed) return false;
   if (parsed.type === 'images') return true;
   if (!user) return false;
-  if (parsed.type === 'documents') {
-    if (user.role === 'SUPER_ADMIN') return true;
-    return Boolean(await db.user.findFirst({ where: { id: user.id, idDocumentKey: key }, select: { id: true } }));
+  if (user.role === 'SUPER_ADMIN' || (parsed.type === 'audio' && userHasPermission(user, 'releases:media'))) return true;
+  const uploaded = await db.storedUpload.findUnique({ where: { key } });
+  return uploaded?.userId === user.id;
+}
+
+export async function requireOwnedUpload(db, userId, key, type) {
+  if (key == null) return;
+  if (parseUploadKey(key)?.type !== type && !/^drive:[a-zA-Z0-9_-]+$/.test(key)) {
+    throw Object.assign(new Error('Invalid upload key'), { statusCode: 400 });
   }
-  if (userHasPermission(user, 'releases:media')) return true;
-  return Boolean(await db.track.findFirst({ where: { audioKey: key, release: { userId: user.id } }, select: { id: true } }));
+  const uploaded = await db.storedUpload.findUnique({ where: { key } });
+  if (!uploaded || uploaded.userId !== userId) {
+    throw Object.assign(new Error('Upload does not belong to this account'), { statusCode: 403 });
+  }
 }

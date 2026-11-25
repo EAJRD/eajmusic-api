@@ -1,21 +1,24 @@
 {
-  "name": "eajmusic-backend-api",
+  "name": "eajmusic-platform",
   "version": "1.2.0",
-  "description": "Motor de API REST, Release Builder, Analíticas y Desembolso ATH Móvil de EAJMUSIC",
+  "description": "Plataforma EAJMUSIC: Portal del Artista (artist.eajmusic.com), Backoffice Admin (eaj.eajmusic.com) y Backend API InsForge / PostgreSQL",
   "main": "src/server.js",
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
-    "build": "node --check src/server.js && echo '✅ [BACK] Build verification successful: API syntax clean and ready for production'",
+    "build": "node --check src/server.js && echo '✅ [BUILD] Syntax and modules verified'",
     "cron:sync": "node --loader ts-node/esm src/cron/syncAmuseCron.ts || python3 integrations/amuse/sync_amuse_to_db.py --mock",
     "test": "node --test test/*.test.js"
   },
   "keywords": [
     "eajmusic",
+    "home",
+    "admin-portal",
+    "artist-portal",
     "ath-movil",
     "record-label",
-    "amuse-api",
-    "music-distribution"
+    "insforge-postgres",
+    "realtime-sync"
   ],
   "author": "EAJMUSIC / CEO Ernesto",
   "license": "UNLICENSED",

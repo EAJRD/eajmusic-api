@@ -10,6 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { ReleasesSyncManager } from './services/releasesSyncManager.js';
 import { applyCorsHeaders, handleCorsPreflight, isAllowedOrigin, ALLOWED_ORIGINS_LIST } from './security/cors.js';
 import { checkRateLimit, RATE_LIMIT_CONFIG } from './security/rateLimiter.js';
 import { pool, checkPostgresHealth, getReleasesFromDB, POSTGRES_CONFIG } from './db/postgres.js';
@@ -124,16 +125,15 @@ const DB = {
   ]
 };
 
-// Carga de catálogo sincronizado si existe en disco
+// Gestor reactivo de lanzamientos (InsForge / PostgreSQL + SSE Stream)
+export const releasesSyncManager = new ReleasesSyncManager({
+  catalogPath: CATALOG_FILE,
+  initialReleases: DB.releases
+});
+
+// Carga de catálogo sincronizado desde el gestor reactivo
 function getSyncedCatalog() {
-  try {
-    if (fs.existsSync(CATALOG_FILE)) {
-      return JSON.parse(fs.readFileSync(CATALOG_FILE, 'utf-8'));
-    }
-  } catch (err) {
-    console.warn('⚠️ No se pudo leer catalog_synced.json, usando memoria local:', err.message);
-  }
-  return DB.releases;
+  return releasesSyncManager.getReleases();
 }
 
 function getAnalyticsData() {
@@ -274,8 +274,26 @@ function sendJson(res, statusCode, data, req) {
 
 // Servidor HTTP Principal
 const server = http.createServer(async (req, res) => {
+  const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const pathname = parsedUrl.pathname;
+  const method = req.method;
+
+  // Stream Reactivo de Lanzamientos (Server-Sent Events) - Cross-Origin Safe
+  if (pathname === '/v1/releases/stream' || pathname === '/api/v1/releases/stream') {
+    if (method === 'OPTIONS') {
+      res.writeHead(204, {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Origin, X-Requested-With, Content-Type, Accept, Authorization, apikey, prefer, x-client-info',
+        'Access-Control-Allow-Methods': 'GET, OPTIONS'
+      });
+      res.end();
+      return;
+    }
+    return releasesSyncManager.addClient(req, res);
+  }
+
   // Manejo de preflight OPTIONS y CORS seguro
-  if (req.method === 'OPTIONS') {
+  if (method === 'OPTIONS') {
     return handleCorsPreflight(req, res);
   }
   applyCorsHeaders(req, res);
@@ -284,10 +302,6 @@ const server = http.createServer(async (req, res) => {
   if (!checkRateLimit(req, res)) {
     return;
   }
-
-  const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const pathname = parsedUrl.pathname;
-  const method = req.method;
 
   try {
     // 1. Health Check
@@ -565,7 +579,7 @@ const server = http.createServer(async (req, res) => {
 
     // 3. Catálogo Público (/v1/catalog o /api/v1/catalog)
     if (pathname === '/v1/catalog' || pathname === '/api/v1/catalog') {
-      const catalog = getSyncedCatalog();
+      const catalog = releasesSyncManager.getReleases();
       return sendJson(res, 200, {
         success: true,
         total: catalog.length,
@@ -573,7 +587,15 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // 4. Lanzamientos / Releases (/api/releases, /releases, /v1/releases, /api/v1/releases)
+    // 4. Stream Reactivo de Lanzamientos (Server-Sent Events) - Cross-Origin Safe
+    if (pathname === '/v1/releases/stream' || pathname === '/api/v1/releases/stream') {
+      if (method === 'OPTIONS') {
+        return handleCorsPreflight(req, res);
+      }
+      return releasesSyncManager.addClient(req, res);
+    }
+
+    // 4.1 Lanzamientos / Releases (/api/releases, /releases, /v1/releases, /api/v1/releases)
     if (
       pathname === '/api/releases' ||
       pathname === '/releases' ||
@@ -581,13 +603,19 @@ const server = http.createServer(async (req, res) => {
       pathname === '/api/v1/releases'
     ) {
       if (method === 'GET') {
-        const catalog = getSyncedCatalog();
+        const catalog = releasesSyncManager.getReleases();
         const releases = await getReleasesFromDB(catalog);
         return sendJson(res, 200, { success: true, releases }, req);
       }
       if (method === 'POST') {
         const body = await parseJsonBody(req);
         if (!body.title) return sendJson(res, 400, { error: 'El título del lanzamiento es obligatorio' }, req);
+
+        if (pathname.includes('/v1/')) {
+          const newRelease = await releasesSyncManager.createRelease(body);
+          DB.releases.unshift(newRelease);
+          return sendJson(res, 201, { success: true, release: newRelease }, req);
+        }
 
         const newRelease = {
           id: `rel_eaj_${crypto.randomBytes(4).toString('hex')}`,
@@ -607,6 +635,59 @@ const server = http.createServer(async (req, res) => {
       }
     }
 
+    // 4.2 Actualización / Mutación PATCH y PUT de Release (/v1/releases/:id)
+    const matchReleaseId = pathname.match(/^\/(?:api\/)?(?:v1\/)?releases\/([^/]+)$/);
+    if (matchReleaseId && (method === 'PATCH' || method === 'PUT')) {
+      const releaseId = matchReleaseId[1];
+      const body = await parseJsonBody(req);
+      const updated = await releasesSyncManager.patchRelease(releaseId, body);
+      if (!updated) return sendJson(res, 404, { error: 'Lanzamiento no encontrado' }, req);
+      return sendJson(res, 200, { success: true, release: updated }, req);
+    }
+
+    // 4.3 Actualización de Estado de Release (/v1/releases/:id/status)
+    const matchStatus = pathname.match(/^\/(?:api\/)?v1\/releases\/([^/]+)\/status$/);
+    if (matchStatus) {
+      if (method !== 'PUT' && method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
+      const releaseId = matchStatus[1];
+      const body = await parseJsonBody(req);
+      if (!body.status) return sendJson(res, 400, { error: 'El campo status es obligatorio' });
+
+      const updated = await releasesSyncManager.updateReleaseStatus(releaseId, body.status, body.review_notes || '');
+      if (!updated) return sendJson(res, 404, { error: 'Lanzamiento no encontrado' });
+      return sendJson(res, 200, { success: true, release: updated });
+    }
+
+    // 4.3 Aprobación Rápida A&R (/v1/releases/:id/approve)
+    const matchApprove = pathname.match(/^\/(?:api\/)?v1\/releases\/([^/]+)\/approve$/);
+    if (matchApprove) {
+      if (method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
+      const releaseId = matchApprove[1];
+      const body = await parseJsonBody(req).catch(() => ({}));
+      const updated = await releasesSyncManager.updateReleaseStatus(
+        releaseId,
+        'approved',
+        body.review_notes || 'Aprobado formalmente por el Director A&R.'
+      );
+      if (!updated) return sendJson(res, 404, { error: 'Lanzamiento no encontrado' });
+      return sendJson(res, 200, { success: true, release: updated });
+    }
+
+    // 4.4 Rechazo A&R (/v1/releases/:id/reject)
+    const matchReject = pathname.match(/^\/(?:api\/)?v1\/releases\/([^/]+)\/reject$/);
+    if (matchReject) {
+      if (method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
+      const releaseId = matchReject[1];
+      const body = await parseJsonBody(req).catch(() => ({}));
+      const updated = await releasesSyncManager.updateReleaseStatus(
+        releaseId,
+        'rejected',
+        body.review_notes || 'Metadatos o calidad de audio no satisfacen los estándares del sello.'
+      );
+      if (!updated) return sendJson(res, 404, { error: 'Lanzamiento no encontrado' });
+      return sendJson(res, 200, { success: true, release: updated });
+    }
+
     // Subida/Validación de Artwork
     if (pathname.match(/^\/(api\/)?v1\/releases\/[^/]+\/artwork$/)) {
       if (method !== 'PUT' && method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
@@ -620,9 +701,11 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const release = DB.releases.find(r => r.id === releaseId);
+      const release = releasesSyncManager.getReleaseById(releaseId) || DB.releases.find(r => r.id === releaseId);
       if (release) {
         release.cover_art_url = body.artwork_url || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1200';
+        releasesSyncManager.persistCatalog();
+        releasesSyncManager.broadcast('RELEASE_STATUS_UPDATED', { release });
       }
 
       return sendJson(res, 200, {
@@ -636,15 +719,19 @@ const server = http.createServer(async (req, res) => {
     if (pathname.match(/^\/(api\/)?v1\/releases\/[^/]+\/submit$/)) {
       if (method !== 'POST') return sendJson(res, 405, { error: 'Método no permitido' });
       const releaseId = pathname.split('/')[pathname.split('/').length - 2];
-      const release = DB.releases.find(r => r.id === releaseId) || DB.releases[0];
-      release.status = 'in_review';
+      const updated = await releasesSyncManager.updateReleaseStatus(
+        releaseId,
+        'in_review',
+        'Enviado a revisión editorial y validación DDEX para entrega a DSPs.'
+      );
 
       return sendJson(res, 200, {
         success: true,
         message: 'Lanzamiento enviado a revisión editorial y validación DDEX para entrega a DSPs.',
         release_id: releaseId,
         status: 'in_review',
-        estimated_delivery_hours: 48
+        estimated_delivery_hours: 48,
+        release: updated
       });
     }
 
@@ -816,4 +903,5 @@ if (isDirectRun && process.env.NODE_ENV !== 'test') {
   });
 }
 
+export { ReleasesSyncManager };
 export default server;

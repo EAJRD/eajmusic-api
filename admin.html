@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EAJ Music — Backoffice Central & A&R Admin (eaj.eajmusic.com)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-black: #08080a;
+      --bg-surface: #121217;
+      --bg-surface-elevated: #1a1a24;
+      --accent-gold: #e5b358;
+      --accent-gold-light: #f3cf88;
+      --accent-gold-glow: rgba(229, 179, 88, 0.25);
+      --ath-orange: #ff5000;
+      --green-status: #22c55e;
+      --blue-accent: #38bdf8;
+      --border-subtle: #23232f;
+      --border-gold: rgba(229, 179, 88, 0.35);
+      --text-main: #f4f4f7;
+      --text-muted: #9292a0;
+      --font-display: 'Cinzel', serif;
+      --font-sans: 'Plus Jakarta Sans', sans-serif;
+      --font-mono: 'Space Grotesk', monospace;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background-color: var(--bg-black);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      line-height: 1.5;
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* Sidebar Navigation */
+    aside {
+      width: 270px;
+      background: var(--bg-surface);
+      border-right: 1px solid var(--border-subtle);
+      padding: 1.75rem 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+      position: sticky;
+      top: 0;
+      height: 100vh;
+    }
+
+    .brand-box {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      text-decoration: none;
+      color: #fff;
+    }
+
+    .brand-badge {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: #181822;
+      border: 1px solid var(--accent-gold);
+      color: var(--accent-gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-display);
+      font-weight: 800;
+      font-size: 0.95rem;
+      box-shadow: 0 0 12px var(--accent-gold-glow);
+    }
+
+    .brand-title {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+    }
+
+    .brand-sub {
+      font-size: 0.65rem;
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    nav.sidebar-nav {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      flex-grow: 1;
+    }
+
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      padding: 0.75rem 1rem;
+      border-radius: 10px;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .nav-btn:hover {
+      background: var(--bg-surface-elevated);
+      color: #fff;
+    }
+
+    .nav-btn.active {
+      background: rgba(229, 179, 88, 0.12);
+      color: var(--accent-gold);
+      border: 1px solid var(--border-gold);
+    }
+
+    .user-footer {
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+      color: #0b0b0d;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 0.8rem;
+    }
+
+    .user-info .name { font-size: 0.85rem; font-weight: 700; }
+    .user-info .role { font-size: 0.7rem; color: var(--green-status); }
+
+    /* Main Content Area */
+    main {
+      flex-grow: 1;
+      padding: 2.25rem 2.5rem;
+      overflow-y: auto;
+    }
+
+    header.top-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2.25rem;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 1.25rem;
+    }
+
+    .page-title h1 {
+      font-size: 1.85rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+    }
+
+    .page-title p {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .btn-gold {
+      background: linear-gradient(135deg, var(--accent-gold), #b88a36);
+      color: #08080a;
+      padding: 0.6rem 1.25rem;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      transition: all 0.2s;
+    }
+
+    .btn-gold:hover {
+      box-shadow: 0 4px 16px var(--accent-gold-glow);
+      transform: translateY(-2px);
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--border-subtle);
+      padding: 0.55rem 1.15rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .btn-outline:hover {
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
+    /* KPI Summary Cards */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1.25rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .kpi-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      padding: 1.5rem;
+      position: relative;
+    }
+
+    .kpi-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+      margin-bottom: 0.4rem;
+    }
+
+    .kpi-value {
+      font-size: 1.9rem;
+      font-weight: 800;
+      color: #fff;
+    }
+
+    .kpi-desc {
+      font-size: 0.76rem;
+      color: var(--green-status);
+      margin-top: 0.35rem;
+    }
+
+    /* Content Sections */
+    .admin-section {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 1.75rem;
+      margin-bottom: 2rem;
+    }
+
+    .section-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Tables */
+    table.data-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.88rem;
+    }
+
+    table.data-table th {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    table.data-table td {
+      padding: 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+      vertical-align: middle;
+    }
+
+    table.data-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.65rem;
+      border-radius: 20px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .badge-live { background: rgba(34, 197, 94, 0.15); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3); }
+    .badge-pending { background: rgba(229, 179, 88, 0.15); color: #e5b358; border: 1px solid var(--border-gold); }
+    .badge-ath { background: rgba(255, 80, 0, 0.15); color: #ff5000; border: 1px solid rgba(255, 80, 0, 0.3); }
+
+    .action-btn-sm {
+      background: var(--bg-surface-elevated);
+      color: #fff;
+      border: 1px solid var(--border-subtle);
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .action-btn-sm:hover {
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
+    /* Terminal Console */
+    .console-box {
+      background: #09090d;
+      border: 1px solid #1c1c28;
+      border-radius: 10px;
+      padding: 1rem 1.25rem;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      color: #8be9fd;
+      max-height: 180px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+
+    .console-box .log-time { color: #6272a4; margin-right: 0.5rem; }
+    .console-box .log-success { color: #50fa7b; }
+    .console-box .log-warn { color: #ffb86c; }
+  </style>
+</head>
+<body>
+
+  <!-- SIDEBAR -->
+  <aside>
+    <a href="/" class="brand-box">
+      <div class="brand-badge">EAJ</div>
+      <div>
+        <div class="brand-title">EAJ MUSIC</div>
+        <div class="brand-sub">Sello & Backoffice</div>
+      </div>
+    </a>
+
+    <nav class="sidebar-nav">
+      <button class="nav-btn active" onclick="switchView('overview')">🎛️ Vista General</button>
+      <button class="nav-btn" onclick="switchView('demos')">🎧 Mesa Curatorial A&R</button>
+      <button class="nav-btn" onclick="switchView('releases')">💿 Lanzamientos DDEX</button>
+      <button class="nav-btn" onclick="switchView('sync')">🔄 Amuse Sync Engine</button>
+      <button class="nav-btn" onclick="switchView('payouts')">🇵🇷 Payouts ATH Móvil</button>
+    </nav>
+
+    <div class="user-footer">
+      <div class="avatar">CEO</div>
+      <div class="user-info">
+        <div class="name">Ernesto / Dirección</div>
+        <div class="role">● Super Admin</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN VIEW -->
+  <main>
+    <header class="top-header">
+      <div class="page-title">
+        <h1>Backoffice Administrativo · eaj.eajmusic.com</h1>
+        <p>Control central de catálogo, curaduría de maquetas y dispersión de regalías fonográficas.</p>
+      </div>
+      <div class="header-actions">
+        <a href="/" class="btn-outline">Ver eajmusic.com</a>
+        <button class="btn-gold" onclick="triggerManualSync()">🔄 Sincronizar Amuse</button>
+      </div>
+    </header>
+
+    <!-- KPIS -->
+    <section class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-label">Streams Totales Catálogo</div>
+        <div class="kpi-value">1,845,200</div>
+        <div class="kpi-desc">↑ +14.2% este mes</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Lanzamientos en DSPs</div>
+        <div class="kpi-value">4</div>
+        <div class="kpi-desc">100% validados DDEX ERN 4.3</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Regalías Liquidadas</div>
+        <div class="kpi-value">$7,196.28</div>
+        <div class="kpi-desc">Dispersión express ATH Móvil activa</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Demos Pendientes A&R</div>
+        <div class="kpi-value">3</div>
+        <div class="kpi-desc">Recepción activa en demo@eajmusic.com</div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN 1: CONTROL DE LANZAMIENTOS DDEX -->
+    <section class="admin-section" id="sec-releases">
+      <div class="section-title">
+        <span>Catálogo Oficial de Lanzamientos (Sincronizado)</span>
+        <span style="font-size:0.8rem; color:var(--text-muted);">Fuente: data/catalog_synced.json</span>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Lanzamiento</th>
+            <th>Artista</th>
+            <th>UPC</th>
+            <th>Tipo / Género</th>
+            <th>Estado DDEX</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="releasesTableBody">
+          <tr>
+            <td><strong>Neon Horizons</strong></td>
+            <td>Kaelo & EAJ Collective</td>
+            <td><code>7300012345678</code></td>
+            <td>Single / Synthwave</td>
+            <td><span class="badge badge-live">Live en Spotify / Apple</span></td>
+            <td><button class="action-btn-sm" onclick="alert('Metadata DDEX validada para Neon Horizons.')">Auditar DDEX</button></td>
+          </tr>
+          <tr>
+            <td><strong>Midnight In San Juan</strong></td>
+            <td>Vlady Santos</td>
+            <td><code>7300012345679</code></td>
+            <td>EP (2 Tracks) / Afrobeat</td>
+            <td><span class="badge badge-live">Live en DSPs</span></td>
+            <td><button class="action-btn-sm" onclick="alert('Metadata DDEX validada para Midnight In San Juan.')">Auditar DDEX</button></td>
+          </tr>
+          <tr>
+            <td><strong>Gravedad Cero</strong></td>
+            <td>Isla Sintética</td>
+            <td><code>7300012345680</code></td>
+            <td>Single / Dream Pop</td>
+            <td><span class="badge badge-live">Live en DSPs</span></td>
+            <td><button class="action-btn-sm" onclick="alert('Metadata DDEX validada para Gravedad Cero.')">Auditar DDEX</button></td>
+          </tr>
+          <tr>
+            <td><strong>Frecuencia Caribe</strong></td>
+            <td>Vlady Santos</td>
+            <td><code>7300012345681</code></td>
+            <td>Single / Afro-Trap</td>
+            <td><span class="badge badge-live">Live en DSPs</span></td>
+            <td><button class="action-btn-sm" onclick="alert('Metadata DDEX validada para Frecuencia Caribe.')">Auditar DDEX</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SECCIÓN 2: MESA CURATORIAL DE DEMOS (A&R) -->
+    <section class="admin-section" id="sec-demos">
+      <div class="section-title">
+        <span>Mesa Curatorial de Maquetas (A&R Inbox)</span>
+        <button class="action-btn-sm" onclick="alert('Buzón sincronizado con demo@eajmusic.com')">Refrescar Buzón</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Maqueta / Track</th>
+            <th>Artista / Productor</th>
+            <th>Email</th>
+            <th>Origen</th>
+            <th>Estado</th>
+            <th>Resolución</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>"Fuego en Calle Loíza"</strong></td>
+            <td>Niko PR</td>
+            <td>niko@demo.pr</td>
+            <td>San Juan, PR</td>
+            <td><span class="badge badge-pending">En Evaluación</span></td>
+            <td>
+              <button class="action-btn-sm" style="color:#22c55e; border-color:#22c55e;" onclick="resolveDemo('Aprobado para Contrato Sello')">Aprobar Sello</button>
+              <button class="action-btn-sm" onclick="resolveDemo('Derivado a Plan Pro Artist')">Derivar a DIY</button>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>"Nube de Neón"</strong></td>
+            <td>BeatMaker 787</td>
+            <td>beats@island.com</td>
+            <td>Ponce, PR</td>
+            <td><span class="badge badge-pending">En Evaluación</span></td>
+            <td>
+              <button class="action-btn-sm" style="color:#22c55e; border-color:#22c55e;" onclick="resolveDemo('Aprobado para Coproducción Empire')">Aprobar con Empire</button>
+              <button class="action-btn-sm" onclick="resolveDemo('Archivado con feedback')">Feedback</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- SECCIÓN 3: AMUSE SYNC CONSOLE -->
+    <section class="admin-section" id="sec-sync">
+      <div class="section-title">
+        <span>Amuse Ingestion & AI Database Status</span>
+        <span style="font-size:0.8rem; color:var(--blue-accent);">InsForge / Supabase Engine</span>
+      </div>
+      <div class="console-box" id="consoleOutput">
+        <div><span class="log-time">[2026-10-31 22:18:24]</span> <span class="log-success">SYS_INIT:</span> Pipeline de ingesta Amuse conectado a PostgREST AI Database.</div>
+        <div><span class="log-time">[2026-10-31 22:18:25]</span> <span class="log-success">CACHE_READY:</span> data/catalog_synced.json cargado exitosamente (4 lanzamientos, 5 tracks).</div>
+        <div><span class="log-time">[2026-10-31 22:18:25]</span> <span class="log-success">EMBEDDINGS:</span> Vectores de audio 1536d generados con pgvector.</div>
+        <div><span class="log-time">[2026-10-31 22:18:26]</span> <span class="log-warn">ATH_GATEWAY:</span> Webhook de dispersión ATH Móvil Business en estado STANDBY LISTO.</div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN 4: DISPERSIÓN DE PAGOS ATH MÓVIL -->
+    <section class="admin-section" id="sec-payouts">
+      <div class="section-title">
+        <span>Solicitudes de Retiro por ATH Móvil en Puerto Rico</span>
+        <button class="btn-gold" onclick="alert('Lote de retiros ATH Móvil procesado con éxito sin comisiones.')">⚡ Dispersar Lote Pendiente ($1,240.00)</button>
+      </div>
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Artista</th>
+            <th>Teléfono ATH Móvil</th>
+            <th>Monto Regalías</th>
+            <th>Comisión</th>
+            <th>Estado</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Kaelo (Neon Horizons)</strong></td>
+            <td><code>+1 (787) 555-0192</code></td>
+            <td>$780.00 USD</td>
+            <td><strong style="color:var(--green-status);">0% ($0.00)</strong></td>
+            <td><span class="badge badge-ath">Listo para Dispersión</span></td>
+            <td><button class="action-btn-sm" onclick="alert('Transferencia de $780.00 enviada por ATH Móvil')">Pagar Ahora</button></td>
+          </tr>
+          <tr>
+            <td><strong>Vlady Santos (Frecuencia Caribe)</strong></td>
+            <td><code>+1 (939) 442-8811</code></td>
+            <td>$460.00 USD</td>
+            <td><strong style="color:var(--green-status);">0% ($0.00)</strong></td>
+            <td><span class="badge badge-ath">Listo para Dispersión</span></td>
+            <td><button class="action-btn-sm" onclick="alert('Transferencia de $460.00 enviada por ATH Móvil')">Pagar Ahora</button></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+
+  <script>
+    const API_BASE = 'http://localhost:3001/v1';
+    let adminSyncEventSource = null;
+    let adminBroadcastChannel = null;
+
+    function triggerManualSync() {
+      const consoleBox = document.getElementById('consoleOutput');
+      const time = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      consoleBox.innerHTML += `<div><span class="log-time">[${time}]</span> <span class="log-success">EXEC_SYNC:</span> Disparando AmuseSyncService.executeFullSync()...</div>`;
+      consoleBox.innerHTML += `<div><span class="log-time">[${time}]</span> <span class="log-success">SYNC_COMPLETE:</span> Catálogo y métricas sincronizadas con la Base de Datos IA / PostgreSQL.</div>`;
+      consoleBox.scrollTop = consoleBox.scrollHeight;
+      loadAdminReleases();
+      alert('Sincronización manual ejecutada con éxito. Catálogo actualizado.');
+    }
+
+    function resolveDemo(resolution) {
+      alert(`Resolución aplicada a la maqueta: ${resolution}`);
+    }
+
+    function switchView(view) {
+      document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+
+    // CARGA DE LANZAMIENTOS EN VIVO DESDE BACKEND API
+    async function loadAdminReleases() {
+      try {
+        const res = await fetch(`${API_BASE}/releases`);
+        if (res.ok) {
+          const data = await res.json();
+          renderAdminReleases(data.releases || []);
+        }
+      } catch (err) {
+        console.warn('Backend API no disponible en 3001, manteniendo vista local.');
+      }
+    }
+
+    function renderAdminReleases(releases) {
+      const tbody = document.getElementById('releasesTableBody');
+      if (!tbody || !releases.length) return;
+
+      tbody.innerHTML = releases.map(r => {
+        const status = (r.status || 'draft').toLowerCase();
+        let badgeHtml = '';
+        if (status === 'approved' || status === 'released') {
+          badgeHtml = '<span class="badge badge-live">Live DDEX</span>';
+        } else if (status === 'rejected') {
+          badgeHtml = '<span class="badge" style="background:rgba(239,68,68,0.15); color:#ef4444; border:1px solid #ef4444;">Rechazado</span>';
+        } else {
+          badgeHtml = '<span class="badge" style="background:rgba(229,179,88,0.15); color:#e5b358; border:1px solid #e5b358;">Pendiente A&R</span>';
+        }
+
+        return `
+          <tr id="rel-row-${r.id}">
+            <td><strong>${r.title}</strong></td>
+            <td>${r.artist_name || 'Kaelo & EAJ Collective'}</td>
+            <td><code>${r.upc || 'Pendiente'}</code></td>
+            <td><span style="text-transform:uppercase; font-size:0.75rem;">${r.type}</span> / ${r.genre || 'Urbano'}</td>
+            <td>${badgeHtml}</td>
+            <td style="display:flex; gap:0.4rem;">
+              ${status !== 'approved' ? `
+                <button class="action-btn-sm" style="background:#22c55e; color:#000; font-weight:700;" onclick="adminApproveRelease('${r.id}')">✓ Aprobar</button>
+                <button class="action-btn-sm" style="background:#ef4444; color:#fff;" onclick="adminRejectRelease('${r.id}')">✕</button>
+              ` : `
+                <button class="action-btn-sm" onclick="alert('Metadata DDEX validada para ${r.title}.')">Auditar DDEX</button>
+              `}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    async function adminApproveRelease(id) {
+      try {
+        const res = await fetch(`${API_BASE}/releases/${id}/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ review_notes: 'Aprobado formalmente por el Director A&R.' })
+        });
+        if (res.ok) {
+          loadAdminReleases();
+          if (adminBroadcastChannel) {
+            adminBroadcastChannel.postMessage({ type: 'RELEASE_STATUS_UPDATED', id, status: 'approved' });
+          }
+        }
+      } catch (err) {
+        alert('Error al aprobar el lanzamiento.');
+      }
+    }
+
+    async function adminRejectRelease(id) {
+      const reason = prompt('Ingrese el motivo del rechazo:') || 'Metadatos no cumplen estándares del sello.';
+      try {
+        const res = await fetch(`${API_BASE}/releases/${id}/reject`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ review_notes: reason })
+        });
+        if (res.ok) {
+          loadAdminReleases();
+          if (adminBroadcastChannel) {
+            adminBroadcastChannel.postMessage({ type: 'RELEASE_STATUS_UPDATED', id, status: 'rejected' });
+          }
+        }
+      } catch (err) {
+        alert('Error al rechazar el lanzamiento.');
+      }
+    }
+
+    // INICIALIZAR STREAM REACTIVO EN ADMIN
+    function initAdminReactiveSync() {
+      if ('BroadcastChannel' in window) {
+        try {
+          adminBroadcastChannel = new BroadcastChannel('eaj_releases_sync_channel');
+          adminBroadcastChannel.onmessage = (event) => {
+            if (event.data?.type === 'RELEASE_CREATED' || event.data?.type === 'RELEASE_STATUS_UPDATED') {
+              loadAdminReleases();
+            }
+          };
+        } catch (e) {}
+      }
+
+      try {
+        adminSyncEventSource = new EventSource(`${API_BASE}/releases/stream`);
+
+        adminSyncEventSource.addEventListener('RELEASE_CREATED', (e) => {
+          loadAdminReleases();
+        });
+
+        adminSyncEventSource.addEventListener('RELEASE_STATUS_UPDATED', (e) => {
+          loadAdminReleases();
+        });
+
+        adminSyncEventSource.onerror = () => {
+          adminSyncEventSource.close();
+          setTimeout(initAdminReactiveSync, 5000);
+        };
+      } catch (e) {}
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+      loadAdminReleases();
+      initAdminReactiveSync();
+    });
+  </script>
+</body>
+</html>

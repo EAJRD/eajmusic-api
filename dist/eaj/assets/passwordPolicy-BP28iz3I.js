@@ -1,0 +1,1 @@
+function e(t){return t.length<8?"Password must be at least 8 characters.":/[A-Z]/.test(t)?/[a-z]/.test(t)?/[0-9]/.test(t)?/[^A-Za-z0-9]/.test(t)?null:"Password must contain at least one special character.":"Password must contain at least one number.":"Password must contain at least one lowercase letter.":"Password must contain at least one uppercase letter."}export{e as v};

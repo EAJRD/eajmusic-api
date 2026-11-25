@@ -1,0 +1,1684 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EAJMusic — Tu catálogo, en tu bolsillo | Distribución con ATH Móvil</title>
+  <meta name="description" content="Sello y distribuidora musical independiente de Puerto Rico. 100% de tus regalías, subidas ilimitadas y retiros directos por ATH Móvil. Accede a tu dashboard en artist.eajmusic.com.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-black: #0b0b0d;
+      --bg-surface: #141418;
+      --bg-surface-elevated: #1a1a22;
+      --accent-gold: #e5b358;
+      --accent-gold-light: #f3cf88;
+      --accent-gold-glow: rgba(229, 179, 88, 0.28);
+      --ath-orange: #ff5000;
+      --ath-orange-glow: rgba(255, 80, 0, 0.25);
+      --border-subtle: #24242c;
+      --border-gold: rgba(229, 179, 88, 0.4);
+      --text-main: #f4f4f6;
+      --text-muted: #9595a2;
+      --green-highlight: #22c55e;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      scroll-behavior: smooth;
+    }
+
+    body {
+      background-color: var(--bg-black);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+      position: relative;
+      padding-bottom: 90px;
+    }
+
+    /* Textura de vinilo y micrograno analógico */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      opacity: 0.045;
+      background-image: radial-gradient(circle at center, transparent 30%, #fff 31%, transparent 32%),
+                        url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+      z-index: 999;
+    }
+
+    /* Header Nav */
+    header {
+      width: 100%;
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 1.5rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: relative;
+      z-index: 10;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      text-decoration: none;
+      color: var(--text-main);
+    }
+
+    .logo-badge {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #18181e;
+      border: 1px solid var(--accent-gold);
+      box-shadow: 0 0 15px var(--accent-gold-glow);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Cinzel', serif;
+      font-weight: 800;
+      color: var(--accent-gold);
+      font-size: 1.05rem;
+      position: relative;
+    }
+
+    .brand-name {
+      font-family: 'Cinzel', serif;
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+    }
+
+    nav {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+    }
+
+    nav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.88rem;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    nav a:hover {
+      color: var(--accent-gold);
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 0.85rem;
+      align-items: center;
+    }
+
+    .btn-gold {
+      background: linear-gradient(135deg, var(--accent-gold), #b88a36);
+      color: #0b0b0d;
+      padding: 0.6rem 1.35rem;
+      border-radius: 8px;
+      font-weight: 700;
+      font-size: 0.88rem;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      display: inline-block;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-gold:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(229, 179, 88, 0.4);
+    }
+
+    .btn-dashboard {
+      background: #181820;
+      color: #fff;
+      border: 1px solid var(--border-gold);
+      padding: 0.55rem 1.25rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.86rem;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      transition: all 0.2s;
+    }
+
+    .btn-dashboard:hover {
+      background: rgba(229, 179, 88, 0.15);
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
+    /* Hero Section */
+    .hero {
+      max-width: 1140px;
+      margin: 3.5rem auto 5.5rem;
+      padding: 0 1.5rem;
+      text-align: center;
+      position: relative;
+      z-index: 10;
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-transform: uppercase;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--accent-gold);
+      background: rgba(229, 179, 88, 0.1);
+      border: 1px solid rgba(229, 179, 88, 0.25);
+      padding: 0.4rem 1.15rem;
+      border-radius: 30px;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero-eyebrow .badge-tag {
+      background: var(--ath-orange);
+      color: #fff;
+      font-size: 0.65rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 10px;
+      letter-spacing: 1px;
+    }
+
+    .hero h1 {
+      font-size: 3.4rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      line-height: 1.15;
+      margin-bottom: 1.5rem;
+    }
+
+    .hero h1 span {
+      background: linear-gradient(135deg, #ffffff 30%, var(--accent-gold) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: 1.15rem;
+      color: var(--text-muted);
+      max-width: 720px;
+      margin: 0 auto 2.5rem;
+    }
+
+    .hero-highlights {
+      display: flex;
+      justify-content: center;
+      gap: 2rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .highlight-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      color: #e2e2e8;
+    }
+
+    .highlight-icon {
+      color: var(--green-highlight);
+      font-weight: bold;
+    }
+
+    .hero-actions {
+      display: flex;
+      justify-content: center;
+      gap: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--text-main);
+      border: 1px solid var(--border-subtle);
+      padding: 0.6rem 1.35rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.88rem;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .btn-outline:hover {
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+    }
+
+    /* SECCIÓN ATH MÓVIL BANNER */
+    .ath-feature-banner {
+      max-width: 1140px;
+      margin: 0 auto 6rem;
+      padding: 2.5rem;
+      background: radial-gradient(circle at top right, rgba(255, 80, 0, 0.12), rgba(18, 18, 24, 0.95));
+      border: 1px solid rgba(255, 80, 0, 0.35);
+      border-radius: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 2rem;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      position: relative;
+      z-index: 10;
+    }
+
+    .ath-text h2 {
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+    }
+
+    .ath-text h2 span {
+      color: #ff7733;
+    }
+
+    .ath-text p {
+      color: var(--text-muted);
+      max-width: 620px;
+      font-size: 0.95rem;
+    }
+
+    .ath-pill-box {
+      background: #111116;
+      border: 1px solid rgba(255, 80, 0, 0.4);
+      padding: 1.25rem 1.75rem;
+      border-radius: 14px;
+      text-align: center;
+      min-width: 240px;
+    }
+
+    .ath-pill-box .tag {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--ath-orange);
+      letter-spacing: 1.5px;
+    }
+
+    .ath-pill-box .value {
+      font-size: 1.8rem;
+      font-weight: 800;
+      color: #fff;
+      margin: 0.25rem 0;
+    }
+
+    .ath-pill-box .desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* SECCIÓN DE PLANES Y PRECIOS */
+    .pricing-section {
+      max-width: 1140px;
+      margin: 0 auto 6rem;
+      padding: 0 1.5rem;
+      position: relative;
+      z-index: 10;
+    }
+
+    .pricing-header {
+      text-align: center;
+      margin-bottom: 3.5rem;
+    }
+
+    .pricing-badge {
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--accent-gold);
+      margin-bottom: 0.5rem;
+      display: inline-block;
+    }
+
+    .pricing-header h2 {
+      font-size: 2.3rem;
+      font-weight: 800;
+      margin-bottom: 0.75rem;
+    }
+
+    .pricing-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 2rem;
+      align-items: stretch;
+    }
+
+    .pricing-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 18px;
+      padding: 2.5rem 2rem;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    .pricing-card:hover {
+      transform: translateY(-6px);
+      box-shadow: 0 16px 36px rgba(0, 0, 0, 0.7);
+    }
+
+    .pricing-card.featured {
+      background: radial-gradient(circle at top right, #221e16, var(--bg-surface));
+      border: 1.5px solid var(--accent-gold);
+      box-shadow: 0 0 30px rgba(229, 179, 88, 0.2);
+    }
+
+    .popular-tag {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent-gold);
+      color: #0b0b0d;
+      font-size: 0.72rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      padding: 0.25rem 1rem;
+      border-radius: 20px;
+    }
+
+    .plan-name {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #fff;
+      margin-bottom: 0.5rem;
+    }
+
+    .plan-desc {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+      min-height: 42px;
+    }
+
+    .plan-price {
+      display: flex;
+      align-items: baseline;
+      gap: 0.35rem;
+      margin-bottom: 1.75rem;
+    }
+
+    .plan-price .currency {
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--accent-gold);
+    }
+
+    .plan-price .amount {
+      font-size: 3rem;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1;
+    }
+
+    .plan-price .period {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .plan-features {
+      list-style: none;
+      margin-bottom: 2rem;
+      flex-grow: 1;
+    }
+
+    .plan-features li {
+      font-size: 0.9rem;
+      color: #cfcfe0;
+      margin-bottom: 0.85rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.65rem;
+    }
+
+    .plan-features li::before {
+      content: "✓";
+      color: var(--accent-gold);
+      font-weight: 800;
+    }
+
+    .plan-features li.ath-feature {
+      color: #fff;
+      font-weight: 600;
+    }
+
+    .plan-features li.ath-feature::before {
+      content: "⚡";
+      color: var(--ath-orange);
+    }
+
+    /* SECCIÓN CATÁLOGO MUSICAL INTERACTIVO */
+    .catalog-section {
+      max-width: 1140px;
+      margin: 0 auto 6rem;
+      padding: 0 1.5rem;
+      position: relative;
+      z-index: 10;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .section-badge {
+      text-transform: uppercase;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: var(--accent-gold);
+      margin-bottom: 0.5rem;
+      display: inline-block;
+    }
+
+    .section-header h2 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 0.75rem;
+    }
+
+    .section-header p {
+      color: var(--text-muted);
+      font-size: 1rem;
+      max-width: 580px;
+      margin: 0 auto;
+    }
+
+    .catalog-filters {
+      display: flex;
+      justify-content: center;
+      gap: 0.75rem;
+      margin-bottom: 2.5rem;
+      flex-wrap: wrap;
+    }
+
+    .filter-btn {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      color: var(--text-muted);
+      padding: 0.45rem 1.15rem;
+      border-radius: 20px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .filter-btn:hover {
+      border-color: var(--accent-gold);
+      color: #fff;
+    }
+
+    .filter-btn.active {
+      background: rgba(229, 179, 88, 0.15);
+      border-color: var(--accent-gold);
+      color: var(--accent-gold);
+      box-shadow: 0 0 12px rgba(229, 179, 88, 0.2);
+    }
+
+    .catalog-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 2rem;
+    }
+
+    .release-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 14px;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .release-card:hover {
+      border-color: var(--border-gold);
+      transform: translateY(-6px);
+      box-shadow: 0 14px 30px rgba(0, 0, 0, 0.6);
+    }
+
+    .release-art-wrap {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background: #181820;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .vinyl-artwork {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      background-size: cover;
+      background-position: center;
+    }
+
+    .art-bg-1 { background: linear-gradient(135deg, #1f1124 0%, #3e1b4d 50%, #e5b358 100%); }
+    .art-bg-2 { background: linear-gradient(135deg, #0e1c26 0%, #17384a 50%, #44919b 100%); }
+    .art-bg-3 { background: linear-gradient(135deg, #24160d 0%, #4e2912 50%, #e5b358 100%); }
+    .art-bg-4 { background: linear-gradient(135deg, #15181e 0%, #202b38 50%, #90a4ae 100%); }
+
+    .vinyl-circle {
+      width: 110px;
+      height: 110px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #0e0e11 35%, #22222a 36%, #111116 55%, #2a2a35 56%, #0d0d12 70%);
+      box-shadow: 0 0 25px rgba(0,0,0,0.8), inset 0 0 8px rgba(0,0,0,0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: transform 0.6s ease;
+    }
+
+    .release-card:hover .vinyl-circle {
+      transform: rotate(45deg) scale(1.04);
+    }
+
+    .vinyl-center {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #0b0b0d;
+      font-family: 'Cinzel', serif;
+      font-size: 0.7rem;
+      font-weight: 800;
+    }
+
+    .play-overlay-btn {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+      color: #0b0b0d;
+      border: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      cursor: pointer;
+      box-shadow: 0 4px 15px rgba(229, 179, 88, 0.45);
+      transition: transform 0.2s, background 0.2s;
+      z-index: 4;
+    }
+
+    .play-overlay-btn:hover {
+      transform: scale(1.1);
+      background: var(--accent-gold-light);
+    }
+
+    .release-details {
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      flex-grow: 1;
+    }
+
+    .release-meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.4rem;
+    }
+
+    .release-tag {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: var(--accent-gold);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .release-year {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .release-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 0.2rem;
+    }
+
+    .release-artist {
+      font-size: 0.88rem;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    .release-actions {
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border-subtle);
+      padding-top: 0.75rem;
+    }
+
+    .streaming-links {
+      display: flex;
+      gap: 0.65rem;
+    }
+
+    .stream-icon {
+      color: var(--text-muted);
+      font-size: 0.82rem;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .stream-icon:hover {
+      color: var(--accent-gold);
+    }
+
+    /* REPRODUCTOR FLOTANTE / STICKY AUDIO PLAYER */
+    .sticky-player {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(14, 14, 18, 0.95);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border-gold);
+      padding: 0.85rem 1.5rem;
+      z-index: 1000;
+      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.5rem;
+      max-width: 100vw;
+    }
+
+    .player-track-info {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      min-width: 200px;
+    }
+
+    .player-mini-cover {
+      width: 44px;
+      height: 44px;
+      border-radius: 8px;
+      background: var(--accent-gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #0b0b0d;
+      font-weight: 800;
+      font-size: 0.8rem;
+    }
+
+    .player-track-title {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    .player-track-sub {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+    }
+
+    .player-controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex-grow: 1;
+      max-width: 600px;
+      gap: 0.35rem;
+    }
+
+    .player-buttons {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+    }
+
+    .player-btn {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      transition: color 0.2s;
+    }
+
+    .player-btn:hover {
+      color: #fff;
+    }
+
+    .player-btn-main {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+      color: #0b0b0d;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      border: none;
+      box-shadow: 0 0 12px var(--accent-gold-glow);
+    }
+
+    .player-btn-main:hover {
+      background: var(--accent-gold-light);
+    }
+
+    .player-progress-bar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .time-stamp {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-variant-numeric: tabular-nums;
+      min-width: 32px;
+    }
+
+    .progress-track {
+      flex-grow: 1;
+      height: 4px;
+      background: #2a2a34;
+      border-radius: 2px;
+      position: relative;
+      cursor: pointer;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 35%;
+      background: var(--accent-gold);
+      border-radius: 2px;
+      position: relative;
+      box-shadow: 0 0 8px var(--accent-gold-glow);
+    }
+
+    .waveform-visualizer {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 24px;
+      padding: 0 0.5rem;
+    }
+
+    .waveform-bar {
+      width: 3px;
+      height: 8px;
+      background: var(--accent-gold);
+      border-radius: 1px;
+      transition: height 0.15s ease;
+    }
+
+    .is-playing .waveform-bar {
+      animation: pulseWave 0.9s infinite ease-in-out alternate;
+    }
+
+    .is-playing .waveform-bar:nth-child(2) { animation-delay: 0.15s; }
+    .is-playing .waveform-bar:nth-child(3) { animation-delay: 0.3s; }
+    .is-playing .waveform-bar:nth-child(4) { animation-delay: 0.45s; }
+    .is-playing .waveform-bar:nth-child(5) { animation-delay: 0.2s; }
+    .is-playing .waveform-bar:nth-child(6) { animation-delay: 0.35s; }
+
+    @keyframes pulseWave {
+      0% { height: 6px; }
+      100% { height: 22px; }
+    }
+
+    /* Features Grid */
+    .features {
+      max-width: 1140px;
+      margin: 0 auto 6rem;
+      padding: 0 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 1.75rem;
+      position: relative;
+      z-index: 10;
+    }
+
+    .feature-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: 16px;
+      padding: 2.25rem 1.75rem;
+      transition: all 0.25s ease;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .feature-card:hover {
+      border-color: rgba(229, 179, 88, 0.4);
+      transform: translateY(-4px);
+    }
+
+    .feature-icon {
+      font-size: 2rem;
+      margin-bottom: 1.25rem;
+      color: var(--accent-gold);
+    }
+
+    .feature-card h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 0.65rem;
+      color: #fff;
+    }
+
+    .feature-card p {
+      color: var(--text-muted);
+      font-size: 0.92rem;
+      line-height: 1.5;
+    }
+
+    /* Demo Drop Callout */
+    .demo-drop {
+      max-width: 1140px;
+      margin: 0 auto 6rem;
+      padding: 3.5rem 2rem;
+      background: radial-gradient(circle at top right, #242018, #141418);
+      border: 1px solid rgba(229, 179, 88, 0.35);
+      border-radius: 20px;
+      text-align: center;
+      box-shadow: 0 15px 40px rgba(0, 0, 0, 0.5);
+      position: relative;
+      z-index: 10;
+    }
+
+    .demo-drop h2 {
+      font-size: 2.2rem;
+      font-weight: 800;
+      margin-bottom: 1rem;
+    }
+
+    .demo-drop p {
+      color: var(--text-muted);
+      max-width: 580px;
+      margin: 0 auto 2rem;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border-subtle);
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      color: #6c6c78;
+      font-size: 0.85rem;
+      position: relative;
+      z-index: 10;
+    }
+
+    footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+      margin: 0 0.5rem;
+    }
+
+    footer a:hover {
+      color: var(--accent-gold);
+    }
+
+    @media (max-width: 768px) {
+      .hero h1 { font-size: 2.25rem; }
+      nav { display: none; }
+      .ath-feature-banner {
+        flex-direction: column;
+        text-align: center;
+      }
+      .sticky-player {
+        flex-direction: column;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+      }
+      .player-track-info {
+        width: 100%;
+        justify-content: flex-start;
+      }
+      .waveform-visualizer {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <a href="/" class="logo-container" aria-label="EAJMusic Inicio">
+      <div class="logo-badge" style="overflow:hidden; padding:1px;">
+        <img src="assets/logo-eajmusic.jpg" alt="EAJMusic Logo Oficial" style="width:100%; height:100%; object-fit:cover; border-radius:50%;">
+      </div>
+      <span class="brand-name">EAJMusic</span>
+    </a>
+    <nav>
+      <a href="#ath-movil">ATH Móvil 🇵🇷</a>
+      <a href="#planes">Planes</a>
+      <a href="#catalogo">Catálogo</a>
+      <a href="#circuito">Circuito 360°</a>
+      <a href="https://instagram.com/eajmusic_" target="_blank" rel="noopener">@eajmusic_</a>
+    </nav>
+    <div class="nav-actions">
+      <a href="artist.html" class="btn-dashboard">
+        <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#22c55e;"></span>
+        Dashboard
+      </a>
+      <a href="#planes" class="btn-gold">Comenzar</a>
+    </div>
+  </header>
+
+  <main>
+    <!-- HERO SECTION ACTUALIZADA -->
+    <section class="hero">
+      <div class="hero-eyebrow">
+        <span>Tu catálogo, en tu bolsillo</span>
+        <span class="badge-tag">ATH MÓVIL DIRECTO</span>
+      </div>
+      <h1>Lanza tu música al mundo.<br><span>Cobra tus regalías directo por ATH Móvil.</span></h1>
+      <p>La plataforma discográfica y de distribución para artistas independientes en Puerto Rico. 100% de tus regalías, sin comisiones ocultas y con retiro instantáneo en tu cuenta local.</p>
+      
+      <div class="hero-highlights">
+        <div class="highlight-item"><span class="highlight-icon">✓</span> 100% de tus Regalías Fonográficas</div>
+        <div class="highlight-item"><span class="highlight-icon">✓</span> Retiro Express por ATH Móvil</div>
+        <div class="highlight-item"><span class="highlight-icon">✓</span> Distribución Global en +150 Tiendas</div>
+        <div class="highlight-item"><span class="highlight-icon">✓</span> Dashboard en Tiempo Real</div>
+      </div>
+
+      <div class="hero-actions">
+        <a href="artist.html" class="btn-gold">Acceder al Dashboard</a>
+        <a href="#planes" class="btn-outline">Ver Planes desde $0</a>
+      </div>
+    </section>
+
+    <!-- BANNER DESTACADO DE INTEGRACIÓN ATH MÓVIL -->
+    <section class="ath-feature-banner" id="ath-movil">
+      <div class="ath-text">
+        <h2>El puente financiero que faltaba: <span>Retiro por ATH Móvil</span></h2>
+        <p>Se acabó esperar semanas o pagar altas comisiones por transferencias bancarias internacionales. Con EAJMusic, tus ingresos de streaming en Spotify, Apple Music, TikTok y YouTube se transfieren directamente a tu número de ATH Móvil en Puerto Rico con un solo clic.</p>
+      </div>
+      <div class="ath-pill-box">
+        <div class="tag">Comisión por Retiro</div>
+        <div class="value">0%</div>
+        <div class="desc">Tus regalías completas en tu bolsillo</div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN DE PLANES Y PRECIOS -->
+    <section class="pricing-section" id="planes">
+      <div class="pricing-header">
+        <span class="pricing-badge">Precios Claros y Accesibles</span>
+        <h2>Elige el plan para tu carrera musical</h2>
+        <p>Desde tu primera maqueta hasta el catálogo de un sello independiente completo.</p>
+      </div>
+
+      <div class="pricing-grid">
+        <!-- PLAN FREE -->
+        <div class="pricing-card">
+          <h3 class="plan-name">Free</h3>
+          <p class="plan-desc">Ideal para lanzar tu primer tema y familiarizarte con el ecosistema.</p>
+          <div class="plan-price">
+            <span class="currency">$</span>
+            <span class="amount">0</span>
+            <span class="period">/siempre</span>
+          </div>
+          <ul class="plan-features">
+            <li>1 Artista principal</li>
+            <li>Distribución a Spotify y Apple Music</li>
+            <li>100% de regalías fonográficas</li>
+            <li>Acceso a artist.eajmusic.com</li>
+            <li>Códigos UPC/ISRC incluidos</li>
+          </ul>
+          <a href="artist.html" class="btn-outline" style="text-align:center;">Crear Cuenta Gratis</a>
+        </div>
+
+        <!-- PLAN PRO ARTIST (DESTACADO) -->
+        <div class="pricing-card featured">
+          <div class="popular-tag">Más Popular</div>
+          <h3 class="plan-name">Pro Artist</h3>
+          <p class="plan-desc">El estándar profesional para músicos y creadores activos en Puerto Rico.</p>
+          <div class="plan-price">
+            <span class="currency">$</span>
+            <span class="amount">19.99</span>
+            <span class="period">/año</span>
+          </div>
+          <ul class="plan-features">
+            <li class="ath-feature">Retiro directo express por ATH Móvil</li>
+            <li>Lanzamientos ilimitados (Singles, EPs, Álbumes)</li>
+            <li>100% de regalías sin retención de comisiones</li>
+            <li>Distribución a +150 plataformas (TikTok, Meta, IG)</li>
+            <li>Letras sincronizadas y fecha de lanzamiento fijada</li>
+            <li>Soporte de máster y distribución prioritaria</li>
+          </ul>
+          <a href="artist.html" class="btn-gold" style="text-align:center;">Activar Pro Artist</a>
+        </div>
+
+        <!-- PLAN LABEL PLUS -->
+        <div class="pricing-card">
+          <h3 class="plan-name">Label Plus</h3>
+          <p class="plan-desc">Para colectivos, estudios de producción y sellos independientes en expansión.</p>
+          <div class="plan-price">
+            <span class="currency">$</span>
+            <span class="amount">49.99</span>
+            <span class="period">/año</span>
+          </div>
+          <ul class="plan-features">
+            <li class="ath-feature">Retiros ilimitados por ATH Móvil & ACH</li>
+            <li>Hasta 5 artistas o colectivos bajo una misma cuenta</li>
+            <li>División automática de regalías (Payment Splits)</li>
+            <li>Códigos ISRC personalizados con sello propio</li>
+            <li>Acceso directo al circuito de video con Empire Animations</li>
+            <li>Gestor de cuenta y soporte VIP prioritario</li>
+          </ul>
+          <a href="artist.html" class="btn-outline" style="text-align:center;">Comenzar Label Plus</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECCIÓN INTERACTIVA DEL CATÁLOGO MUSICAL -->
+    <section class="catalog-section" id="catalogo">
+      <div class="section-header">
+        <span class="section-badge">Discografía & Lanzamientos</span>
+        <h2>Catálogo de Sencillos & EPs</h2>
+        <p>Escucha las producciones distribuidas por EAJ Music. Haz clic para reproducir el preview.</p>
+      </div>
+
+      <!-- Filtros por Género / Formato -->
+      <div class="catalog-filters">
+        <button class="filter-btn active" data-filter="all">Todos los Lanzamientos</button>
+        <button class="filter-btn" data-filter="urbano">Urbano & Trap</button>
+        <button class="filter-btn" data-filter="indie">Indie Alternativo</button>
+        <button class="filter-btn" data-filter="ep">EPs & Álbumes</button>
+      </div>
+
+      <!-- Grid de Lanzamientos -->
+      <div class="catalog-grid" id="catalogGrid">
+        <!-- Track 1 -->
+        <article class="release-card" data-category="urbano" data-id="1" data-title="San Juan Nights" data-artist="Kaelo & EAJ Collective" data-bpm="115" data-duration="2:48">
+          <div class="release-art-wrap">
+            <div class="vinyl-artwork art-bg-1">
+              <div class="vinyl-circle">
+                <div class="vinyl-center">EAJ-1</div>
+              </div>
+            </div>
+            <button class="play-overlay-btn" title="Reproducir preview" onclick="playTrack(1)">▶</button>
+          </div>
+          <div class="release-details">
+            <div class="release-meta">
+              <span class="release-tag">Urbano / Neo-Perreo</span>
+              <span class="release-year">2026</span>
+            </div>
+            <h3 class="release-title">San Juan Nights</h3>
+            <p class="release-artist">Kaelo & EAJ Collective</p>
+            <div class="release-actions">
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Plan Pro Artist · 24-bit</span>
+              <div class="streaming-links">
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Music');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Music');">Apple</a>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Track 2 -->
+        <article class="release-card" data-category="urbano" data-id="2" data-title="Frecuencia Caribe" data-artist="Vlady Santos" data-bpm="128" data-duration="3:12">
+          <div class="release-art-wrap">
+            <div class="vinyl-artwork art-bg-2">
+              <div class="vinyl-circle">
+                <div class="vinyl-center">EAJ-2</div>
+              </div>
+            </div>
+            <button class="play-overlay-btn" title="Reproducir preview" onclick="playTrack(2)">▶</button>
+          </div>
+          <div class="release-details">
+            <div class="release-meta">
+              <span class="release-tag">Afro-Trap Caribeño</span>
+              <span class="release-year">2026</span>
+            </div>
+            <h3 class="release-title">Frecuencia Caribe</h3>
+            <p class="release-artist">Vlady Santos</p>
+            <div class="release-actions">
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Dolby Atmos Master</span>
+              <div class="streaming-links">
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Music');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Music');">Apple</a>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Track 3 -->
+        <article class="release-card" data-category="indie" data-id="3" data-title="Gravedad Cero" data-artist="Isla Sintética" data-bpm="98" data-duration="3:35">
+          <div class="release-art-wrap">
+            <div class="vinyl-artwork art-bg-3">
+              <div class="vinyl-circle">
+                <div class="vinyl-center">EAJ-3</div>
+              </div>
+            </div>
+            <button class="play-overlay-btn" title="Reproducir preview" onclick="playTrack(3)">▶</button>
+          </div>
+          <div class="release-details">
+            <div class="release-meta">
+              <span class="release-tag">Indie / Dream Pop</span>
+              <span class="release-year">2026</span>
+            </div>
+            <h3 class="release-title">Gravedad Cero</h3>
+            <p class="release-artist">Isla Sintética</p>
+            <div class="release-actions">
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Coproducción Empire Films</span>
+              <div class="streaming-links">
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Music');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Music');">Apple</a>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Track 4 -->
+        <article class="release-card" data-category="ep" data-id="4" data-title="Manifiesto EP" data-artist="Varios Artistas EAJ" data-bpm="120" data-duration="14:20">
+          <div class="release-art-wrap">
+            <div class="vinyl-artwork art-bg-4">
+              <div class="vinyl-circle">
+                <div class="vinyl-center">EP-1</div>
+              </div>
+            </div>
+            <button class="play-overlay-btn" title="Reproducir preview" onclick="playTrack(4)">▶</button>
+          </div>
+          <div class="release-details">
+            <div class="release-meta">
+              <span class="release-tag">EP Oficial / 4 Temas</span>
+              <span class="release-year">2026</span>
+            </div>
+            <h3 class="release-title">Manifiesto EP</h3>
+            <p class="release-artist">Varios Artistas EAJ</p>
+            <div class="release-actions">
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">Label Plus Release</span>
+              <div class="streaming-links">
+                <a href="#" class="stream-icon" title="Spotify" onclick="event.preventDefault(); alert('Enlace directo a Spotify oficial configurado por EAJ Music');">Spotify</a>
+                <a href="#" class="stream-icon" title="Apple Music" onclick="event.preventDefault(); alert('Enlace directo a Apple Music oficial configurado por EAJ Music');">Apple</a>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- CIRCUITO 360° -->
+    <section class="features" id="circuito">
+      <div class="feature-card">
+        <div class="feature-icon">📲</div>
+        <h3>Tu catálogo, en tu bolsillo</h3>
+        <p>Monitorea reproducciones diarias, ingresos devengados y fechas de cobro desde artist.eajmusic.com en tiempo real.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🇵🇷</div>
+        <h3>Retiro Directo por ATH Móvil</h3>
+        <p>Cero intermediarios internacionales ni trabas bancarias. Transfiere tus regalías a tu cuenta en Puerto Rico al instante.</p>
+      </div>
+
+      <div class="feature-card">
+        <div class="feature-icon">🎬</div>
+        <h3>Ecosistema Audiovisual Empire</h3>
+        <p>Conecta tu música con producción de videoclips de cine de la mano de Empire Animations Joyful y distribución a festivales.</p>
+      </div>
+    </section>
+
+    <!-- DEMO DROP -->
+    <section class="demo-drop" id="demo">
+      <h2>¿Tienes un proyecto listo para despegar?</h2>
+      <p>Crea tu cuenta en el dashboard oficial o envía tu maqueta para ser considerado por nuestro sello discográfico.</p>
+      <div style="display:flex; justify-content:center; gap:1rem; flex-wrap:wrap;">
+        <a href="artist.html" class="btn-gold">Entrar a artist.eajmusic.com</a>
+        <a href="mailto:demo@eajmusic.com" class="btn-outline">Enviar Maqueta (demo@eajmusic.com)</a>
+      </div>
+    </section>
+  </main>
+
+  <!-- REPRODUCTOR PERSISTENTE STICKY -->
+  <div class="sticky-player" id="stickyPlayer">
+    <div class="player-track-info">
+      <div class="player-mini-cover" id="playerBadge">EAJ</div>
+      <div>
+        <div class="player-track-title" id="playerTitle">San Juan Nights</div>
+        <div class="player-track-sub" id="playerArtist">Kaelo & EAJ Collective</div>
+      </div>
+    </div>
+
+    <div class="player-controls">
+      <div class="player-buttons">
+        <button class="player-btn" onclick="prevTrack()" title="Anterior">⏮</button>
+        <button class="player-btn-main" id="mainPlayBtn" onclick="togglePlay()" title="Play / Pause">▶</button>
+        <button class="player-btn" onclick="nextTrack()" title="Siguiente">⏭</button>
+      </div>
+      <div class="player-progress-bar">
+        <span class="time-stamp" id="currTime">0:12</span>
+        <div class="progress-track" onclick="seek(event)">
+          <div class="progress-fill" id="progressFill" style="width: 25%;"></div>
+        </div>
+        <span class="time-stamp" id="totalTime">2:48</span>
+      </div>
+    </div>
+
+    <div class="waveform-visualizer" id="waveformBox">
+      <div class="waveform-bar"></div>
+      <div class="waveform-bar"></div>
+      <div class="waveform-bar"></div>
+      <div class="waveform-bar"></div>
+      <div class="waveform-bar"></div>
+      <div class="waveform-bar"></div>
+    </div>
+  </div>
+
+  <footer>
+    <p>© 2026 EAJMusic. Portal oficial <a href="index.html">Eajmusic.com</a> · Portal del Artista <a href="artist.html">artist.eajmusic.com</a> · Backoffice Sello <a href="admin.html">eaj.eajmusic.com</a> · Respaldado por <a href="https://empireanimationsjoyful.com" target="_blank" rel="noopener">Empire Animations Joyful</a></p>
+  </footer>
+
+  <!-- AUDIO ELEMENT NATIVO PARA PREVIEWS REALES -->
+  <audio id="nativeAudioPlayer" preload="none"></audio>
+
+  <!-- SCRIPT INTERACTIVO DEL CATÁLOGO & PREVIEW ENGINE -->
+  <script>
+    // Colección de pistas normalizadas (cargadas dinámicamente desde data/catalog_synced.json)
+    let catalogReleases = [];
+    let playableTracks = [
+      {
+        id: "trk_amuse_101",
+        releaseId: "rel_amuse_001",
+        title: "Neon Horizons (Original Mix)",
+        artist: "Kaelo & EAJ Collective",
+        category: "indie",
+        duration: "3:34",
+        seconds: 214,
+        preview_url: "https://cdn.freesound.org/previews/612/612610_5674468-lq.mp3",
+        cover_art_url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800",
+        freq: 220
+      },
+      {
+        id: "trk_amuse_201",
+        releaseId: "rel_amuse_002",
+        title: "Isla Verde Groove",
+        artist: "Vlady Santos",
+        category: "urbano",
+        duration: "3:05",
+        seconds: 185,
+        preview_url: "https://cdn.freesound.org/previews/567/567280_1648170-lq.mp3",
+        cover_art_url: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800",
+        freq: 293.66
+      },
+      {
+        id: "trk_amuse_202",
+        releaseId: "rel_amuse_002",
+        title: "Condado Nights",
+        artist: "Vlady Santos",
+        category: "urbano",
+        duration: "3:22",
+        seconds: 202,
+        preview_url: "https://cdn.freesound.org/previews/450/450622_5121236-lq.mp3",
+        cover_art_url: "https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800",
+        freq: 261.63
+      },
+      {
+        id: "trk_amuse_301",
+        releaseId: "rel_amuse_003",
+        title: "Gravedad Cero",
+        artist: "Isla Sintética",
+        category: "indie",
+        duration: "3:35",
+        seconds: 215,
+        preview_url: "https://cdn.freesound.org/previews/511/511874_11222409-lq.mp3",
+        cover_art_url: "https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=800",
+        freq: 329.63
+      },
+      {
+        id: "trk_amuse_401",
+        releaseId: "rel_amuse_004",
+        title: "Frecuencia Caribe (Master Final)",
+        artist: "Vlady Santos",
+        category: "urbano",
+        duration: "3:12",
+        seconds: 192,
+        preview_url: "https://cdn.freesound.org/previews/415/415994_5121236-lq.mp3",
+        cover_art_url: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=800",
+        freq: 349.23
+      }
+    ];
+
+    let currentTrackIndex = 0;
+    let isPlaying = false;
+    let currentSeconds = 0;
+    let timerInterval = null;
+    let audioCtx = null;
+    let oscillator = null;
+    let gainNode = null;
+    let isSynthMode = false;
+    const nativeAudio = document.getElementById('nativeAudioPlayer');
+
+    // Inicializar sintetizador Web Audio para fallback sonoro
+    function initAudioContext() {
+      if (!audioCtx) {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AudioContext();
+      }
+    }
+
+    function startSynthPreview(freq) {
+      try {
+        initAudioContext();
+        if (audioCtx.state === 'suspended') {
+          audioCtx.resume();
+        }
+        stopSynthPreview();
+        oscillator = audioCtx.createOscillator();
+        gainNode = audioCtx.createGain();
+        oscillator.type = 'triangle';
+        oscillator.frequency.setValueAtTime(freq || 220, audioCtx.currentTime);
+        gainNode.gain.setValueAtTime(0.04, audioCtx.currentTime);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start();
+        isSynthMode = true;
+      } catch (e) {
+        console.warn('Web Audio no disponible directamente sin interacción previa');
+      }
+    }
+
+    function stopSynthPreview() {
+      if (oscillator) {
+        try {
+          oscillator.stop();
+          oscillator.disconnect();
+        } catch(e) {}
+        oscillator = null;
+      }
+      isSynthMode = false;
+    }
+
+    // Cargar Catálogo Sincronizado desde data/catalog_synced.json
+    async function initCatalog() {
+      try {
+        const res = await fetch('data/catalog_synced.json');
+        if (res.ok) {
+          catalogReleases = await res.json();
+          renderCatalog(catalogReleases);
+          buildPlayableList(catalogReleases);
+          console.log('✅ [CATALOG] Sincronizado exitosamente desde data/catalog_synced.json');
+        } else {
+          console.warn('⚠️ [CATALOG] Respuesta HTTP no exitosa, manteniendo catálogo estandar');
+        }
+      } catch (e) {
+        console.info('ℹ️ [CATALOG] Modo local directo, utilizando catálogo precargado');
+      }
+      loadTrackInfo();
+    }
+
+    function buildPlayableList(releases) {
+      const list = [];
+      releases.forEach(rel => {
+        if (rel.tracks && rel.tracks.length > 0) {
+          rel.tracks.forEach(trk => {
+            list.push({
+              id: trk.id,
+              releaseId: rel.id,
+              title: trk.title,
+              artist: rel.artist || 'EAJ Music Artist',
+              category: rel.category || (rel.type === 'ep' ? 'ep' : 'urbano'),
+              duration: formatSeconds(trk.duration_seconds),
+              seconds: trk.duration_seconds,
+              preview_url: trk.preview_url,
+              cover_art_url: rel.cover_art_url,
+              freq: trk.freq || 220
+            });
+          });
+        }
+      });
+      if (list.length > 0) {
+        playableTracks = list;
+      }
+    }
+
+    function renderCatalog(releases) {
+      const grid = document.getElementById('catalogGrid');
+      if (!grid) return;
+      grid.innerHTML = '';
+
+      releases.forEach((rel, index) => {
+        const track = rel.tracks && rel.tracks[0] ? rel.tracks[0] : null;
+        const trackId = track ? track.id : 'trk_' + rel.id;
+        const category = rel.category || (rel.type === 'ep' ? 'ep' : 'urbano');
+        const spotifyUrl = rel.stores && rel.stores.spotify ? rel.stores.spotify.url : '#';
+        const appleUrl = rel.stores && rel.stores.apple_music ? rel.stores.apple_music.url : '#';
+
+        const card = document.createElement('article');
+        card.className = 'release-card';
+        card.setAttribute('data-category', category);
+        card.setAttribute('data-id', rel.id);
+
+        card.innerHTML = `
+          <div class="release-art-wrap">
+            <div class="vinyl-artwork" style="background-image: url('${rel.cover_art_url}'); background-size: cover; background-position: center;">
+              <div class="vinyl-circle" style="background: radial-gradient(circle, #0e0e11 35%, #22222a 36%, #111116 55%, #2a2a35 56%, #0d0d12 70%);">
+                <div class="vinyl-center">${rel.type === 'ep' ? 'EP' : 'EAJ'}</div>
+              </div>
+            </div>
+            <button class="play-overlay-btn" title="Reproducir preview" onclick="playTrackById('${trackId}')">▶</button>
+          </div>
+          <div class="release-details">
+            <div class="release-meta">
+              <span class="release-tag">${rel.genre || 'EAJ Sello'}</span>
+              <span class="release-year">${rel.release_date ? rel.release_date.split('-')[0] : '2026'}</span>
+            </div>
+            <h3 class="release-title">${rel.title}</h3>
+            <p class="release-artist">${rel.artist || 'EAJ Music Collective'}</p>
+            <div class="release-actions">
+              <span style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 600;">${rel.plan || 'Pro Artist'} · Máster</span>
+              <div class="streaming-links">
+                <a href="${spotifyUrl}" target="_blank" class="stream-icon" title="Abrir en Spotify">Spotify</a>
+                <a href="${appleUrl}" target="_blank" class="stream-icon" title="Abrir en Apple Music">Apple</a>
+              </div>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+    }
+
+    function formatSeconds(sec) {
+      const m = Math.floor(sec / 60);
+      const s = (sec % 60).toString().padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function playTrackById(id) {
+      const idx = playableTracks.findIndex(t => t.id === id);
+      if (idx !== -1) {
+        currentTrackIndex = idx;
+        currentSeconds = 0;
+        loadTrackInfo();
+        setPlayState(true);
+      }
+    }
+
+    function playTrack(idxNum) {
+      const idx = (idxNum - 1) % playableTracks.length;
+      currentTrackIndex = idx >= 0 ? idx : 0;
+      currentSeconds = 0;
+      loadTrackInfo();
+      setPlayState(true);
+    }
+
+    function togglePlay() {
+      setPlayState(!isPlaying);
+    }
+
+    function setPlayState(play) {
+      isPlaying = play;
+      const playBtn = document.getElementById('mainPlayBtn');
+      const waveBox = document.getElementById('waveformBox');
+      const track = playableTracks[currentTrackIndex];
+
+      if (isPlaying) {
+        playBtn.innerText = '⏸';
+        waveBox.classList.add('is-playing');
+
+        // Intentar reproducción con audio nativo si existe preview_url
+        if (track && track.preview_url && track.preview_url.startsWith('http')) {
+          nativeAudio.src = track.preview_url;
+          nativeAudio.play().then(() => {
+            isSynthMode = false;
+          }).catch(err => {
+            console.warn('⚠️ Fallo en audio nativo (CORS o restricción de red), conmutando a Web Audio synth:', err);
+            startSynthPreview(track.freq);
+          });
+        } else {
+          startSynthPreview(track.freq);
+        }
+
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+          if (!isSynthMode && nativeAudio && !nativeAudio.paused && !isNaN(nativeAudio.currentTime)) {
+            currentSeconds = Math.floor(nativeAudio.currentTime);
+          } else {
+            currentSeconds++;
+          }
+          if (currentSeconds > track.seconds) {
+            nextTrack();
+            return;
+          }
+          updateProgressUI();
+        }, 1000);
+      } else {
+        playBtn.innerText = '▶';
+        waveBox.classList.remove('is-playing');
+        if (nativeAudio) {
+          nativeAudio.pause();
+        }
+        stopSynthPreview();
+        clearInterval(timerInterval);
+      }
+    }
+
+    function nextTrack() {
+      currentTrackIndex = (currentTrackIndex + 1) % playableTracks.length;
+      currentSeconds = 0;
+      loadTrackInfo();
+      setPlayState(true);
+    }
+
+    function prevTrack() {
+      currentTrackIndex = (currentTrackIndex - 1 + playableTracks.length) % playableTracks.length;
+      currentSeconds = 0;
+      loadTrackInfo();
+      setPlayState(true);
+    }
+
+    function loadTrackInfo() {
+      const track = playableTracks[currentTrackIndex];
+      if (!track) return;
+      document.getElementById('playerTitle').innerText = track.title;
+      document.getElementById('playerArtist').innerText = track.artist;
+      document.getElementById('totalTime').innerText = track.duration;
+      document.getElementById('playerBadge').innerText = 'EAJ';
+      if (track.cover_art_url) {
+        document.getElementById('playerBadge').style.backgroundImage = `url('${track.cover_art_url}')`;
+        document.getElementById('playerBadge').style.backgroundSize = 'cover';
+      }
+      updateProgressUI();
+    }
+
+    function updateProgressUI() {
+      const track = playableTracks[currentTrackIndex];
+      if (!track) return;
+      const mins = Math.floor(currentSeconds / 60);
+      const secs = (currentSeconds % 60).toString().padStart(2, '0');
+      document.getElementById('currTime').innerText = `${mins}:${secs}`;
+      const percent = Math.min(100, (currentSeconds / track.seconds) * 100);
+      document.getElementById('progressFill').style.width = `${percent}%`;
+    }
+
+    function seek(event) {
+      const bar = event.currentTarget;
+      const rect = bar.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+      const track = playableTracks[currentTrackIndex];
+      currentSeconds = Math.floor(ratio * track.seconds);
+      if (nativeAudio && !isSynthMode) {
+        try {
+          nativeAudio.currentTime = currentSeconds;
+        } catch(e) {}
+      }
+      updateProgressUI();
+    }
+
+    // Configurar listeners para filtros
+    document.addEventListener('DOMContentLoaded', () => {
+      const filterBtns = document.querySelectorAll('.filter-btn');
+      filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          filterBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          const filter = btn.getAttribute('data-filter');
+
+          const cards = document.querySelectorAll('.release-card');
+          cards.forEach(card => {
+            const cat = card.getAttribute('data-category');
+            if (filter === 'all' || cat === filter) {
+              card.style.display = 'flex';
+            } else {
+              card.style.display = 'none';
+            }
+          });
+        });
+      });
+
+      // Cargar catálogo e inicializar
+      initCatalog();
+    });
+  </script>
+</body>
+</html>
